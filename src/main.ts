@@ -1,12 +1,14 @@
 import { Plugin, Notice } from "obsidian";
-
-type PreTrainedModelType = import("@huggingface/transformers").PreTrainedModel;
-type PreTrainedTokenizerType =
-	import("@huggingface/transformers").PreTrainedTokenizer;
-type TensorType = import("@huggingface/transformers").Tensor;
-type AutoModelType = typeof import("@huggingface/transformers").AutoModel;
-type AutoTokenizerType =
-	typeof import("@huggingface/transformers").AutoTokenizer;
+import type {
+	PreTrainedModelType,
+	PreTrainedTokenizerType,
+	TensorType,
+	AutoModelType,
+	AutoTokenizerType,
+} from "./types";
+import { initializeModelAndTokenizer } from "./model";
+import { Vectorizer } from "./vectorizer";
+import { CommandHandler } from "./commands";
 // ---------------------------------
 
 export default class MyVectorPlugin extends Plugin {
@@ -15,6 +17,8 @@ export default class MyVectorPlugin extends Plugin {
 	isModelReady: boolean = false;
 	isLoading: boolean = false;
 	private initializationPromise: Promise<void> | null = null;
+	vectorizer: Vectorizer | null = null;
+	commandHandler: CommandHandler | null = null;
 
 	// --- transformers のモジュールを保持する変数 ---
 	private transformers: {
@@ -40,7 +44,8 @@ export default class MyVectorPlugin extends Plugin {
 		this.addCommand({
 			id: "vectorize-current-note",
 			name: "Vectorize current note",
-			editorCallback: async (editor, view) => {
+			editorCallback: async (editor) => {
+				// view is unused
 				try {
 					await this.ensureModelInitialized();
 				} catch (error) {
@@ -51,55 +56,15 @@ export default class MyVectorPlugin extends Plugin {
 					return;
 				}
 
-				if (!this.isModelReady || !this.model || !this.tokenizer) {
+				if (!this.isModelReady || !this.commandHandler) {
 					new Notice(
-						"Model is not ready. Initialization might have failed or is still in progress."
+						"Model or command handler is not ready. Please wait or check console."
 					);
 					return;
 				}
 
-				const text = editor.getValue();
-				const sentences = text
-					.split(/\n+/)
-					.map((s) => s.trim())
-					.filter((s) => s.length > 0);
-
-				if (sentences.length === 0) {
-					new Notice("No text found to vectorize.");
-					return;
-				}
-
-				try {
-					new Notice(`Vectorizing ${sentences.length} sentences...`);
-
-					// 時間計測開始
-					const startTime = performance.now();
-
-					const vectors = await this.vectorizeSentences(sentences);
-
-					// 時間計測終了
-					const endTime = performance.now();
-					const processingTime = (endTime - startTime) / 1000; // 秒単位に変換
-
-					console.log(
-						`Vectorization completed in ${processingTime.toFixed(
-							2
-						)} seconds.`
-					);
-					new Notice(
-						`Vectorization complete! ${
-							vectors.length
-						} vectors generated in ${processingTime.toFixed(
-							2
-						)} seconds.`
-					);
-					console.log("Generated vectors:", vectors);
-				} catch (error) {
-					console.error("Vectorization failed:", error);
-					new Notice(
-						"Vectorization failed. Check console for details."
-					);
-				}
+				// Delegate to CommandHandler
+				await this.commandHandler.vectorizeCurrentNote(editor);
 			},
 		});
 
@@ -114,58 +79,30 @@ export default class MyVectorPlugin extends Plugin {
 					new Notice("Failed to initialize AI model. Check console.");
 					return;
 				}
-				if (!this.isModelReady || !this.model || !this.tokenizer) {
-					new Notice("Model is not ready.");
-					return;
-				}
 
-				const files = this.app.vault.getMarkdownFiles();
-				if (files.length === 0) {
-					new Notice("No markdown files found to vectorize.");
-					return;
-				}
-
-				// --- 既存の初期化＆ファイル取得 ---
-				const allItems: { file: string; sentence: string }[] = [];
-				for (const file of files) {
-					const content = await this.app.vault.cachedRead(file);
-					content
-						.split(/\n+/)
-						.map((s) => s.trim())
-						.filter((s) => s.length > 0)
-						.forEach((s) =>
-							allItems.push({ file: file.path, sentence: s })
-						);
-				}
-				new Notice(
-					`Total ${allItems.length} sentences → batched vectorization`
-				);
-				const startAll = performance.now();
-
-				const batchSize = 128;
-				const results: { file: string; vector: number[] }[] = [];
-				for (let i = 0; i < allItems.length; i += batchSize) {
-					const batch = allItems
-						.slice(i, i + batchSize)
-						.map((x) => x.sentence);
-					const vs = await this.vectorizeSentences(batch);
-					vs.forEach((vec, idx) => {
-						results.push({
-							file: allItems[i + idx].file,
-							vector: vec,
-						});
-					});
-					console.log(
-						`Processed ${i + batchSize} sentences, ${
-							results.length
-						} vectors generated.`
+				if (!this.isModelReady || !this.commandHandler) {
+					new Notice(
+						"Model or command handler is not ready. Please wait or check console."
 					);
+					return;
 				}
 
-				const totalTime = (performance.now() - startAll) / 1000;
-				new Notice(`All batched in ${totalTime.toFixed(2)}s`);
-
-				// ------------------------------------
+				// Delegate to CommandHandler
+				try {
+					const results =
+						await this.commandHandler.vectorizeAllNotes();
+					// Optional: Handle results if needed, e.g., display summary
+					if (results && results.length > 0) {
+						// Check if results is not undefined
+						console.log(
+							`Vectorized ${results.length} items across all notes.`
+						);
+					}
+				} catch (error) {
+					// Error handling is likely within vectorizeAllNotes, but catch here too
+					console.error("Failed to vectorize all notes:", error);
+					new Notice("Failed to vectorize all notes. Check console.");
+				}
 			},
 		});
 	}
@@ -249,6 +186,29 @@ export default class MyVectorPlugin extends Plugin {
 					2
 				)} seconds!`
 			);
+			// --- Instantiate Vectorizer and CommandHandler ---
+			if (this.model && this.tokenizer && this.transformers?.Tensor) {
+				this.vectorizer = new Vectorizer(
+					this.model,
+					this.tokenizer,
+					this.transformers.Tensor
+				);
+				this.commandHandler = new CommandHandler(
+					this.app,
+					this.vectorizer
+				);
+				console.log("Vectorizer and CommandHandler initialized.");
+			} else {
+				// This case should ideally not happen if isModelReady is true
+				console.error(
+					"Failed to initialize handlers: Model, tokenizer, or Tensor missing after load."
+				);
+				this.isModelReady = false; // Ensure state reflects reality
+				throw new Error(
+					"Model/Tokenizer/Tensor missing after successful load indication."
+				);
+			}
+			// -------------------------------------------------
 		} catch (error: any) {
 			console.error("Failed to initialize model or tokenizer:", error);
 			console.error("Detailed Error:", error.message, error.stack);
@@ -262,75 +222,6 @@ export default class MyVectorPlugin extends Plugin {
 		}
 	}
 
-	async vectorizeSentences(sentences: string[]): Promise<number[][]> {
-		if (
-			!this.isModelReady ||
-			!this.model ||
-			!this.tokenizer ||
-			!this.transformers ||
-			!this.transformers.Tensor
-		) {
-			throw new Error(
-				"Model, tokenizer, or transformers module is not initialized."
-			);
-		}
-
-		const VECTOR_DIMENSION = 512;
-
-		const Tensor = this.transformers.Tensor; // Tensor クラスへの参照を取得
-		// -----------------------------------------------------
-
-		try {
-			const inputs = this.tokenizer(sentences, {
-				padding: true,
-				truncation: true,
-			});
-
-			const outputs = await this.model!(inputs);
-			let embeddingTensor: TensorType;
-
-			// 1) sentence_embedding があればそのまま使う
-			if (outputs.sentence_embedding instanceof Tensor) {
-				embeddingTensor = outputs.sentence_embedding;
-			}
-			// 2) なければ last_hidden_state の平均プーリング
-			else if (outputs.last_hidden_state instanceof Tensor) {
-				const hidden = outputs.last_hidden_state;
-				const mask = new Tensor(inputs.attention_mask).unsqueeze(2);
-				const sum = hidden.mul(mask).sum(1);
-				const denom = mask.sum(1).clamp_(1e-9, Infinity);
-				embeddingTensor = sum.div(denom);
-			} else {
-				console.error("Model output keys:", Object.keys(outputs));
-				throw new Error("埋め込みテンソルが見つかりません");
-			}
-
-			let resultVectorsNested = embeddingTensor.tolist();
-			let resultVectors: number[][] = resultVectorsNested as number[][];
-
-			if (
-				resultVectors.length > 0 &&
-				resultVectors[0].length > VECTOR_DIMENSION
-			) {
-				resultVectors = resultVectors.map((vector) =>
-					vector.slice(0, VECTOR_DIMENSION)
-				);
-			}
-
-			if (resultVectors.length > 0) {
-				resultVectors = resultVectors.map((vec) => {
-					const norm = Math.hypot(...vec);
-					return norm > 0 ? vec.map((x) => x / norm) : vec;
-				});
-			}
-
-			return resultVectors;
-		} catch (error) {
-			console.error("Error during internal vectorization:", error);
-			throw error;
-		}
-	}
-
 	onunload() {
 		console.log("Unloading vector plugin...");
 		this.model = null;
@@ -339,53 +230,7 @@ export default class MyVectorPlugin extends Plugin {
 		this.isLoading = false;
 		this.initializationPromise = null;
 		this.transformers = null;
-	}
-}
-
-async function initializeModelAndTokenizer(
-	AutoModel: AutoModelType,
-	AutoTokenizer: AutoTokenizerType
-): Promise<{
-	model: PreTrainedModelType;
-	tokenizer: PreTrainedTokenizerType;
-}> {
-	try {
-		console.log("Starting model download/load...");
-		const modelStartTime = performance.now();
-
-		const model = await AutoModel.from_pretrained(
-			"cfsdwe/static-embedding-japanese-for-js",
-			{ device: "webgpu", dtype: "q8" }
-		);
-
-		const modelEndTime = performance.now();
-		const modelLoadTime = (modelEndTime - modelStartTime) / 1000;
-		console.log(
-			`Model loaded in ${modelLoadTime.toFixed(
-				2
-			)} seconds. Starting tokenizer download/load...`
-		);
-
-		const tokenizerStartTime = performance.now();
-
-		const tokenizer = await AutoTokenizer.from_pretrained(
-			"cfsdwe/static-embedding-japanese-for-js",
-			{}
-		);
-
-		const tokenizerEndTime = performance.now();
-		const tokenizerLoadTime =
-			(tokenizerEndTime - tokenizerStartTime) / 1000;
-		console.log(
-			`Tokenizer loaded in ${tokenizerLoadTime.toFixed(2)} seconds.`
-		);
-
-		return { model, tokenizer };
-	} catch (error) {
-		console.error(
-			"Model/Tokenizer Initialization Error in external function:",
-			error
-		);
-		throw error;
+		this.vectorizer = null;
+		this.commandHandler = null;
 	}
 }
