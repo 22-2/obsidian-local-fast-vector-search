@@ -1,12 +1,12 @@
 import { Editor, Notice, App } from "obsidian";
-import { Vectorizer } from "./vectorizer";
+import type { IVectorizer } from "./vectorizers/IVectorizer";
 import { splitTextToSentences } from "./utils";
 
 export class CommandHandler {
 	private app: App;
-	private vectorizer: Vectorizer;
+	private vectorizer: IVectorizer;
 
-	constructor(app: App, vectorizer: Vectorizer) {
+	constructor(app: App, vectorizer: IVectorizer) {
 		this.app = app;
 		this.vectorizer = vectorizer;
 	}

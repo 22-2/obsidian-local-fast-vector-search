@@ -1,4 +1,4 @@
-import { Plugin, Notice } from "obsidian";
+import { Plugin, Notice, App, PluginSettingTab, Setting } from "obsidian";
 import type {
 	PreTrainedModelType,
 	PreTrainedTokenizerType,
@@ -6,18 +6,33 @@ import type {
 	AutoModelType,
 	AutoTokenizerType,
 } from "./types";
-import { initializeModelAndTokenizer } from "./model";
-import { Vectorizer } from "./vectorizer";
+import { initializeTransformers } from "./transformersModel";
+import { IVectorizer } from "./vectorizers/IVectorizer";
+import { createVectorizer } from "./vectorizers/VectorizerFactory";
 import { CommandHandler } from "./commands";
+
 // ---------------------------------
 
+interface PluginSettings {
+	provider: string;
+	ollamaEndpoint: string;
+	ollamaApiKey: string;
+}
+
+const DEFAULT_SETTINGS: PluginSettings = {
+	provider: "transformer",
+	ollamaEndpoint: "https://api.ollama.com/embed",
+	ollamaApiKey: "",
+};
+
 export default class MyVectorPlugin extends Plugin {
+	settings: PluginSettings = DEFAULT_SETTINGS;
 	model: PreTrainedModelType | null = null;
 	tokenizer: PreTrainedTokenizerType | null = null;
 	isModelReady: boolean = false;
 	isLoading: boolean = false;
 	private initializationPromise: Promise<void> | null = null;
-	vectorizer: Vectorizer | null = null;
+	vectorizer: IVectorizer | null = null;
 	commandHandler: CommandHandler | null = null;
 
 	// --- transformers のモジュールを保持する変数 ---
@@ -30,7 +45,74 @@ export default class MyVectorPlugin extends Plugin {
 	// -----------------------------------------
 
 	async onload() {
-		console.log("MyVectorPlugin loading...");
+		// load settings
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
+
+		// add settings tab
+		this.addSettingTab(
+			new (class extends PluginSettingTab {
+				plugin: MyVectorPlugin;
+				constructor(app: App, plugin: MyVectorPlugin) {
+					super(app, plugin);
+					this.plugin = plugin;
+				}
+				display(): void {
+					const { containerEl } = this;
+					containerEl.empty();
+					containerEl.createEl("h2", { text: "Vectorizer Settings" });
+
+					new Setting(containerEl)
+						.setName("Provider")
+						.setDesc("Select the vectorizer provider")
+						.addDropdown((dropdown) =>
+							dropdown
+								.addOption("transformer", "Transformer.js")
+								.addOption("ollama", "Ollama API")
+								.setValue(this.plugin.settings.provider)
+								.onChange(async (value) => {
+									this.plugin.settings.provider = value;
+									await this.plugin.saveData(
+										this.plugin.settings
+									);
+								})
+						);
+
+					new Setting(containerEl)
+						.setName("Ollama Endpoint")
+						.setDesc("Endpoint URL for Ollama embedding service")
+						.addText((text) =>
+							text
+								.setPlaceholder("https://api.ollama.com/embed")
+								.setValue(this.plugin.settings.ollamaEndpoint)
+								.onChange(async (value) => {
+									this.plugin.settings.ollamaEndpoint = value;
+									await this.plugin.saveData(
+										this.plugin.settings
+									);
+								})
+						);
+
+					new Setting(containerEl)
+						.setName("Ollama API Key")
+						.setDesc("API key for Ollama service (if required)")
+						.addText((text) =>
+							text
+								.setPlaceholder("")
+								.setValue(this.plugin.settings.ollamaApiKey)
+								.onChange(async (value) => {
+									this.plugin.settings.ollamaApiKey = value;
+									await this.plugin.saveData(
+										this.plugin.settings
+									);
+								})
+						);
+				}
+			})(this.app, this)
+		);
 
 		this.app.workspace.onLayoutReady(async () => {
 			console.log(
@@ -163,7 +245,7 @@ export default class MyVectorPlugin extends Plugin {
 			// ------------------------------------
 
 			// --- initializeModelAndTokenizer に import したモジュールを渡す ---
-			const { model, tokenizer } = await initializeModelAndTokenizer(
+			const { model, tokenizer } = await initializeTransformers(
 				this.transformers.AutoModel,
 				this.transformers.AutoTokenizer
 			);
@@ -188,11 +270,22 @@ export default class MyVectorPlugin extends Plugin {
 			);
 			// --- Instantiate Vectorizer and CommandHandler ---
 			if (this.model && this.tokenizer && this.transformers?.Tensor) {
-				this.vectorizer = new Vectorizer(
-					this.model,
-					this.tokenizer,
-					this.transformers.Tensor
-				);
+				// Create vectorizer based on settings
+				const provider = this.settings.provider;
+				let options: any = {};
+				if (provider === "transformer") {
+					options = {
+						model: this.model,
+						tokenizer: this.tokenizer,
+						Tensor: this.transformers.Tensor,
+					};
+				} else if (provider === "ollama") {
+					options = {
+						endpoint: this.settings.ollamaEndpoint,
+						apiKey: this.settings.ollamaApiKey,
+					};
+				}
+				this.vectorizer = createVectorizer(provider, options);
 				this.commandHandler = new CommandHandler(
 					this.app,
 					this.vectorizer

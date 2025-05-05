@@ -5,7 +5,7 @@ import type {
 	PreTrainedTokenizerType,
 } from "./types";
 
-export async function initializeModelAndTokenizer(
+export async function initializeTransformers(
 	AutoModel: AutoModelType,
 	AutoTokenizer: AutoTokenizerType
 ): Promise<{
