@@ -6,9 +6,9 @@ export interface VectorizerOptions {
 	model?: PreTrainedModelType;
 	tokenizer?: PreTrainedTokenizerType;
 	Tensor?: any;
-	/** ollama endpoint URL */
+	/** endpoint URL */
 	endpoint?: string;
-	/** ollama API key if needed */
+	/** API key if needed */
 	apiKey?: string;
 }
 
