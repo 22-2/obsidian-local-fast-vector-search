@@ -1,6 +1,7 @@
-import builtins from "builtin-modules";
+// esbuild.config.mjs
 import esbuild from "esbuild";
 import process from "process";
+import builtins from "builtin-modules";
 import inlineWorkerPlugin from "esbuild-plugin-inline-worker";
 
 const banner =
@@ -18,8 +19,9 @@ const context = await esbuild.context({
 	},
 	entryPoints: ["src/main.ts"],
 	bundle: true,
-	plugins: [inlineWorkerPlugin()],
-	platform: "browser",
+	plugins: [
+        inlineWorkerPlugin(),
+    ],
 	external: [
 		"obsidian",
 		"electron",
@@ -34,14 +36,14 @@ const context = await esbuild.context({
 		"@lezer/common",
 		"@lezer/highlight",
 		"@lezer/lr",
-		...builtins],
+		...builtins
+	],
 	format: "cjs",
-	target: "es2020",
+	target: "ES2020",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: "main.js",
-	minify: prod,
 });
 
 if (prod) {

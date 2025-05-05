@@ -1,38 +1,21 @@
 import { IVectorizer } from "./IVectorizer";
-import { TransformerVectorizer } from "./TransformerVectorizer";
-import type { PreTrainedModelType, PreTrainedTokenizerType } from "../types";
+import { WorkerProxyVectorizer } from "./WorkerProxyVectorizer";
 
 export interface VectorizerOptions {
-	model?: PreTrainedModelType;
-	tokenizer?: PreTrainedTokenizerType;
-	Tensor?: any;
-	/** endpoint URL */
 	endpoint?: string;
-	/** API key if needed */
 	apiKey?: string;
 }
 
 /**
  * Factory to create IVectorizer based on provider name
+ * @param provider 'transformer' (uses worker) or 'ollama' (uses API)
  * @param options required dependencies per provider
  */
-export function createVectorizer(
-	provider: string,
-	options: VectorizerOptions
-): IVectorizer {
+export function createVectorizer(provider: string): IVectorizer {
 	switch (provider) {
 		case "transformer":
-			if (!options.model || !options.tokenizer || !options.Tensor) {
-				throw new Error(
-					"TransformerVectorizer requires model, tokenizer, and Tensor."
-				);
-			}
-			return new TransformerVectorizer(
-				options.model,
-				options.tokenizer,
-				options.Tensor
-			);
-
+			console.log("Creating WorkerProxyVectorizer...");
+			return new WorkerProxyVectorizer();
 		default:
 			throw new Error(`Unknown vectorizer provider: ${provider}`);
 	}

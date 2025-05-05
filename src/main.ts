@@ -1,329 +1,223 @@
+// src/main.ts (抜粋)
 import { Plugin, Notice, App, PluginSettingTab, Setting } from "obsidian";
-import type {
-	PreTrainedModelType,
-	PreTrainedTokenizerType,
-	TensorType,
-	AutoModelType,
-	AutoTokenizerType,
-} from "./types";
-import { initializeTransformers } from "./transformersModel";
+// import { initializeTransformers } from "./transformersModel"; // 不要に
 import { IVectorizer } from "./vectorizers/IVectorizer";
 import { createVectorizer } from "./vectorizers/VectorizerFactory";
 import { CommandHandler } from "./commands";
+// WorkerProxyVectorizer の型情報と、それが持つ terminate メソッドを使うためにインポート
+import { WorkerProxyVectorizer } from "./vectorizers/WorkerProxyVectorizer";
+// ApiServiceVectorizer も型チェックのためにインポート (もし存在すれば)
+// import { ApiServiceVectorizer } from "./vectorizers/ApiServiceVectorizer";
 
-// ---------------------------------
-
+// --- PluginSettings Interface ---
 interface PluginSettings {
 	provider: string;
-	ollamaEndpoint: string;
-	ollamaApiKey: string;
 }
 
+// --- Default Settings ---
 const DEFAULT_SETTINGS: PluginSettings = {
 	provider: "transformer",
-	ollamaEndpoint: "https://api.ollama.com/embed",
-	ollamaApiKey: "",
 };
 
 export default class MyVectorPlugin extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
-	model: PreTrainedModelType | null = null;
-	tokenizer: PreTrainedTokenizerType | null = null;
-	isModelReady: boolean = false;
-	isLoading: boolean = false;
 	private initializationPromise: Promise<void> | null = null;
 	vectorizer: IVectorizer | null = null;
 	commandHandler: CommandHandler | null = null;
-
-	// --- transformers のモジュールを保持する変数 ---
-	private transformers: {
-		AutoModel: AutoModelType;
-		AutoTokenizer: AutoTokenizerType;
-		Tensor: typeof import("@huggingface/transformers").Tensor;
-		env: typeof import("@huggingface/transformers").env;
-	} | null = null;
-	// -----------------------------------------
+	private isWorkerReady = false;
 
 	async onload() {
-		// load settings
+		// --- 設定の読み込み ---
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
 			await this.loadData()
 		);
 
-		// add settings tab
-		this.addSettingTab(
-			new (class extends PluginSettingTab {
-				plugin: MyVectorPlugin;
-				constructor(app: App, plugin: MyVectorPlugin) {
-					super(app, plugin);
-					this.plugin = plugin;
-				}
-				display(): void {
-					const { containerEl } = this;
-					containerEl.empty();
-					containerEl.createEl("h2", { text: "Vectorizer Settings" });
+		// --- 設定タブの追加 ---
+		this.addSettingTab(new VectorizerSettingTab(this.app, this));
 
-					new Setting(containerEl)
-						.setName("Provider")
-						.setDesc("Select the vectorizer provider")
-						.addDropdown((dropdown) =>
-							dropdown
-								.addOption("transformer", "Transformer.js")
-								.addOption("ollama", "Ollama API")
-								.setValue(this.plugin.settings.provider)
-								.onChange(async (value) => {
-									this.plugin.settings.provider = value;
-									await this.plugin.saveData(
-										this.plugin.settings
-									);
-								})
-						);
-
-					new Setting(containerEl)
-						.setName("Ollama Endpoint")
-						.setDesc("Endpoint URL for Ollama embedding service")
-						.addText((text) =>
-							text
-								.setPlaceholder("https://api.ollama.com/embed")
-								.setValue(this.plugin.settings.ollamaEndpoint)
-								.onChange(async (value) => {
-									this.plugin.settings.ollamaEndpoint = value;
-									await this.plugin.saveData(
-										this.plugin.settings
-									);
-								})
-						);
-
-					new Setting(containerEl)
-						.setName("Ollama API Key")
-						.setDesc("API key for Ollama service (if required)")
-						.addText((text) =>
-							text
-								.setPlaceholder("")
-								.setValue(this.plugin.settings.ollamaApiKey)
-								.onChange(async (value) => {
-									this.plugin.settings.ollamaApiKey = value;
-									await this.plugin.saveData(
-										this.plugin.settings
-									);
-								})
-						);
-				}
-			})(this.app, this)
-		);
-
+		// --- レイアウト準備完了後にバックグラウンドで初期化を開始 ---
 		this.app.workspace.onLayoutReady(async () => {
 			console.log(
 				"Obsidian layout ready. Triggering background initialization."
 			);
-			this.initializeResources().catch((error) => {
-				console.error("Background model initialization failed:", error);
-			});
+			this.initializationPromise = this.initializeResources().catch(
+				(error) => {
+					console.error(
+						"Background resource initialization failed:",
+						error
+					);
+					new Notice(
+						"Failed to initialize vectorizer worker. Check console."
+					);
+					this.isWorkerReady = false;
+				}
+			);
 		});
 
+		// --- コマンドの追加 ---
 		this.addCommand({
 			id: "vectorize-current-note",
-			name: "Vectorize current note",
+			name: "Vectorize current note (Worker)",
 			editorCallback: async (editor) => {
-				// view is unused
 				try {
-					await this.ensureModelInitialized();
+					await this.ensureWorkerInitialized();
 				} catch (error) {
-					console.error("Model initialization failed:", error);
-					new Notice(
-						"Failed to initialize AI model. Check console for details."
-					);
+					console.error("Worker initialization check failed:", error);
+					new Notice("Vectorizer is not ready. Check console.");
 					return;
 				}
-
-				if (!this.isModelReady || !this.commandHandler) {
-					new Notice(
-						"Model or command handler is not ready. Please wait or check console."
-					);
+				if (!this.commandHandler) {
+					new Notice("Command handler not ready.");
 					return;
 				}
-
-				// Delegate to CommandHandler
 				await this.commandHandler.vectorizeCurrentNote(editor);
 			},
 		});
 
 		this.addCommand({
 			id: "vectorize-all-notes",
-			name: "Vectorize all notes",
+			name: "Vectorize all notes (Worker)",
 			callback: async () => {
 				try {
-					await this.ensureModelInitialized();
+					await this.ensureWorkerInitialized();
 				} catch (error) {
-					console.error("Model initialization failed:", error);
-					new Notice("Failed to initialize AI model. Check console.");
+					console.error("Worker initialization check failed:", error);
+					new Notice("Vectorizer is not ready. Check console.");
 					return;
 				}
-
-				if (!this.isModelReady || !this.commandHandler) {
-					new Notice(
-						"Model or command handler is not ready. Please wait or check console."
-					);
+				if (!this.commandHandler) {
+					new Notice("Command handler not ready.");
 					return;
 				}
-
-				// Delegate to CommandHandler
-				try {
-					const results =
-						await this.commandHandler.vectorizeAllNotes();
-					// Optional: Handle results if needed, e.g., display summary
-					if (results && results.length > 0) {
-						// Check if results is not undefined
-						console.log(
-							`Vectorized ${results.length} items across all notes.`
-						);
-					}
-				} catch (error) {
-					// Error handling is likely within vectorizeAllNotes, but catch here too
-					console.error("Failed to vectorize all notes:", error);
-					new Notice("Failed to vectorize all notes. Check console.");
-				}
+				await this.commandHandler.vectorizeAllNotes();
 			},
 		});
 	}
 
-	async ensureModelInitialized(): Promise<void> {
-		if (this.isModelReady) {
-			return Promise.resolve();
-		}
-
-		if (!this.initializationPromise) {
-			console.log("Initialization not yet started. Starting now.");
-			this.initializationPromise = this.initializeResources();
-		} else {
-			console.log(
-				"Initialization already in progress. Waiting for completion."
-			);
-		}
-
-		await this.initializationPromise;
-	}
-
-	async initializeResources(): Promise<void> {
-		if (this.isLoading || this.isModelReady) {
-			console.log(
-				`Initialization skipped: isLoading=${this.isLoading}, isModelReady=${this.isModelReady}`
-			);
+	async ensureWorkerInitialized(): Promise<void> {
+		if (this.isWorkerReady && this.vectorizer && this.commandHandler) {
 			return;
 		}
 
-		this.isLoading = true;
-
-		// --- window.process を削除 ---
-		// @ts-ignore
-		if (typeof window !== "undefined" && window.process) {
-			console.log("Temporarily deleting window.process.");
-			// @ts-ignore
-			delete window.process;
+		if (!this.initializationPromise) {
+			console.log("Initialization not started, starting now.");
+			this.initializationPromise = this.initializeResources();
 		}
-		// --------------------------
+
+		console.log("Waiting for vectorizer initialization to complete...");
+		await this.initializationPromise;
+		if (!this.isWorkerReady) {
+			throw new Error("Vectorizer failed to initialize.");
+		}
+		console.log("Vectorizer initialization confirmed.");
+	}
+	async initializeResources(): Promise<void> {
+		if (this.isWorkerReady) {
+			console.log("Resources already initialized.");
+			return;
+		}
+
+		console.log(
+			"Initializing resources (Vectorizer and Command Handler)..."
+		);
+		new Notice("Initializing vectorizer...", 3000); // 少し長めに表示
 
 		try {
-			console.log("Starting model and tokenizer initialization...");
-			new Notice("Loading AI model... This may take a while.");
+			this.vectorizer = createVectorizer(this.settings.provider);
 
-			// 初期化時間計測開始
-			const initStartTime = performance.now();
-
-			// --- 動的に transformers を import ---
-			if (!this.transformers) {
+			if (this.vectorizer instanceof WorkerProxyVectorizer) {
 				console.log(
-					"Dynamically importing @huggingface/transformers..."
+					"Waiting for WorkerProxyVectorizer initialization..."
 				);
-				this.transformers = await import("@huggingface/transformers");
-				// 必要に応じて env 設定を行う
-				this.transformers.env.useBrowserCache = true;
-				console.log("Transformers module loaded.");
+				await this.vectorizer.ensureInitialized();
+				this.isWorkerReady = true;
+				console.log("Vectorizer Worker is ready.");
+				new Notice("Vectorizer worker ready!", 2000);
+			} else {
+				// サポートされていない Vectorizer タイプ、または provider が 'ollama' などで
+				// 対応する Vectorizer クラスがまだ実装されていない場合
+				console.warn(
+					`Vectorizer for provider '${this.settings.provider}' might be ready or not implemented.`
+				);
+				// ここでは一旦 true にするが、実際の API Vectorizer 実装で調整が必要
+				this.isWorkerReady = true;
+				// throw new Error("Unsupported vectorizer type or provider.");
 			}
-			// ------------------------------------
 
-			// --- initializeModelAndTokenizer に import したモジュールを渡す ---
-			const { model, tokenizer } = await initializeTransformers(
-				this.transformers.AutoModel,
-				this.transformers.AutoTokenizer
-			);
-			// ---------------------------------------------------------
-			this.model = model;
-			this.tokenizer = tokenizer;
-			this.isModelReady = true;
-
-			// 初期化時間計測終了
-			const initEndTime = performance.now();
-			const initTime = (initEndTime - initStartTime) / 1000; // 秒単位に変換
-
-			console.log(
-				`AI model and tokenizer loaded successfully in ${initTime.toFixed(
-					2
-				)} seconds!`
-			);
-			new Notice(
-				`AI model loaded successfully in ${initTime.toFixed(
-					2
-				)} seconds!`
-			);
-			// --- Instantiate Vectorizer and CommandHandler ---
-			if (this.model && this.tokenizer && this.transformers?.Tensor) {
-				// Create vectorizer based on settings
-				const provider = this.settings.provider;
-				let options: any = {};
-				if (provider === "transformer") {
-					options = {
-						model: this.model,
-						tokenizer: this.tokenizer,
-						Tensor: this.transformers.Tensor,
-					};
-				} else if (provider === "ollama") {
-					options = {
-						endpoint: this.settings.ollamaEndpoint,
-						apiKey: this.settings.ollamaApiKey,
-					};
-				}
-				this.vectorizer = createVectorizer(provider, options);
+			// CommandHandler を初期化 (vectorizer が準備できた後)
+			if (this.isWorkerReady && this.vectorizer) {
 				this.commandHandler = new CommandHandler(
 					this.app,
 					this.vectorizer
 				);
-				console.log("Vectorizer and CommandHandler initialized.");
+				console.log("CommandHandler initialized.");
 			} else {
-				// This case should ideally not happen if isModelReady is true
-				console.error(
-					"Failed to initialize handlers: Model, tokenizer, or Tensor missing after load."
-				);
-				this.isModelReady = false; // Ensure state reflects reality
 				throw new Error(
-					"Model/Tokenizer/Tensor missing after successful load indication."
+					"Vectorizer was not ready after initialization attempt."
 				);
 			}
-			// -------------------------------------------------
-		} catch (error: any) {
-			console.error("Failed to initialize model or tokenizer:", error);
-			console.error("Detailed Error:", error.message, error.stack);
-			this.isModelReady = false;
-			this.transformers = null; // 失敗したらモジュール参照もクリア
-			throw error; // エラーを再スロー
+		} catch (error) {
+			console.error("Failed to initialize resources:", error);
+			this.isWorkerReady = false; // 失敗したらフラグを false に
+			this.vectorizer = null; // リソースをクリア
+			this.commandHandler = null;
+			// エラーを再スローして ensureWorkerInitialized や呼び出し元で捕捉できるようにする
+			throw error;
 		} finally {
-			this.isLoading = false;
-			// --- window.process の復元は不要 (削除したままにする) ---
-			console.log("Initialization process finished.");
+			// isLoading = false; // isLoading は使わない
+			console.log("Resource initialization attempt finished.");
 		}
 	}
 
 	onunload() {
 		console.log("Unloading vector plugin...");
-		this.model = null;
-		this.tokenizer = null;
-		this.isModelReady = false;
-		this.isLoading = false;
-		this.initializationPromise = null;
-		this.transformers = null;
+		// Worker を終了させる (WorkerProxyVectorizer の場合のみ)
+		if (this.vectorizer instanceof WorkerProxyVectorizer) {
+			console.log("Terminating vectorizer worker...");
+			this.vectorizer.terminate();
+		}
 		this.vectorizer = null;
 		this.commandHandler = null;
+		this.initializationPromise = null;
+		this.isWorkerReady = false;
+	}
+}
+
+// --- Settings Tab Class ---
+class VectorizerSettingTab extends PluginSettingTab {
+	plugin: MyVectorPlugin;
+
+	constructor(app: App, plugin: MyVectorPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
+		containerEl.createEl("h2", { text: "Vectorizer Settings" });
+
+		new Setting(containerEl)
+			.setName("Provider")
+			.setDesc(
+				"Select the vectorizer provider (Requires restart or reload after change)"
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("transformer", "Transformer.js (Local Worker)")
+					.setValue(this.plugin.settings.provider)
+					.onChange(async (value) => {
+						this.plugin.settings.provider = value;
+						await this.plugin.saveData(this.plugin.settings);
+						// 設定変更後に再初期化を促すメッセージ
+						new Notice(
+							"Provider changed. Please reload the plugin for changes to take effect.",
+							5000
+						);
+						// TODO: 可能であれば、ここで動的に再初期化するロジックを追加
+					})
+			);
 	}
 }
