@@ -1,18 +1,17 @@
 import type {
-	AutoModelType,
-	AutoTokenizerType,
 	PreTrainedModelType,
 	PreTrainedTokenizerType,
 	TensorType,
 } from "./types";
 import type { env as EnvType } from "@huggingface/transformers";
 
-// --- Worker Global Scope ---
 // @ts-ignore global self for Worker
 const worker = self as DedicatedWorkerGlobalScope;
 
 // 重要！ Transformers.js が環境を誤認識するのを防ぐ:
 // self に process が存在するかチェックし、存在すれば undefined にする。transformers を import する前に行う必要がある。
+
+let originalProcess: any = (self as any).process;
 if (
 	typeof self !== "undefined" &&
 	typeof (self as any).process !== "undefined"
@@ -82,6 +81,8 @@ async function initializeModelAndTokenizer() {
 		isInitialized = true;
 		postMessage({ type: "initialized", payload: true });
 		postMessage({ type: "status", payload: "Model ready." });
+
+		(self as any).process = originalProcess; // 元の process を復元
 	} catch (error: any) {
 		console.error("[Worker] Initialization failed:", error);
 		postMessage({
