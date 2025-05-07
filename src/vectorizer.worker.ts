@@ -29,11 +29,11 @@ let isInitialized = false;
 let isInitializing = false;
 const VECTOR_DIMENSION = 512; // ベクトルの次元数
 
-async function initializeModelAndTokenizer() {
+async function initializeEmbeddingModel() {
 	if (isInitialized || isInitializing) return;
 
 	isInitializing = true;
-	postMessage({ type: "status", payload: "Initializing model..." });
+	postMessage({ type: "status", payload: "Initializing embedding model..." });
 
 	try {
 		// 動的に import
@@ -151,7 +151,7 @@ worker.onmessage = async (event: MessageEvent) => {
 	try {
 		switch (type) {
 			case "initialize":
-				await initializeModelAndTokenizer();
+				await initializeEmbeddingModel();
 				break;
 			case "vectorize":
 				if (!isInitialized) {
