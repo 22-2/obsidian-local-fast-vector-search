@@ -223,20 +223,28 @@ export class PGliteProvider {
 				url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.data`,
 				path: this.resourceCachePaths.fsBundle,
 				type: "application/octet-stream",
-				process: (buffer: ArrayBuffer) =>
+				process: async (buffer: ArrayBuffer) =>
 					new Blob([buffer], { type: "application/octet-stream" }),
 			},
 			wasmModule: {
 				url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.wasm`,
 				path: this.resourceCachePaths.wasmModule,
 				type: "application/wasm",
-				process: (buffer: ArrayBuffer) => WebAssembly.compile(buffer),
+				process: async (buffer: ArrayBuffer) => {
+					if (!WebAssembly.validate(buffer)) {
+						console.error(
+							"Invalid WebAssembly module data from buffer."
+						);
+						throw new Error("Invalid WebAssembly module data.");
+					}
+					return WebAssembly.compile(buffer);
+				},
 			},
 			vectorExtensionBundle: {
 				url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/vector.tar.gz`,
 				path: this.resourceCachePaths.vectorExtensionBundle,
 				type: "application/gzip",
-				process: (buffer: ArrayBuffer) => {
+				process: async (buffer: ArrayBuffer) => {
 					const blob = new Blob([buffer], {
 						type: "application/gzip",
 					});
