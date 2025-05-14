@@ -1,5 +1,12 @@
 // src/main.ts
-import { Plugin, Notice, App, PluginSettingTab, Setting } from "obsidian";
+import {
+	Plugin,
+	Notice,
+	App,
+	PluginSettingTab,
+	Setting,
+	Modal,
+} from "obsidian";
 import { IVectorizer } from "./vectorizers/IVectorizer";
 import { createTransformersVectorizer } from "./vectorizers/VectorizerFactory";
 import { CommandHandler } from "./commands";
@@ -7,16 +14,15 @@ import { WorkerProxyVectorizer } from "./vectorizers/WorkerProxyVectorizer";
 import { PGliteProvider } from "./storage/PGliteProvider";
 import { PGliteVectorStore } from "./storage/PGliteVectorStore";
 import { SearchModal } from "./ui/SearchModal";
+import { DB_NAME } from "./constants";
 const EMBEDDING_DIMENSION = 512;
 
 interface PluginSettings {
 	provider: string;
-	databaseName: string;
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
 	provider: "transformer",
-	databaseName: "embeddings",
 };
 
 export default class MyVectorPlugin extends Plugin {
@@ -190,11 +196,7 @@ export default class MyVectorPlugin extends Plugin {
 			// 2. PGliteProvider と PGliteVectorStore の初期化
 			if (!this.isDbReady && this.isWorkerReady) {
 				initNotice.setMessage("Initializing database...");
-				this.pgProvider = new PGliteProvider(
-					this,
-					this.settings.databaseName,
-					true
-				);
+				this.pgProvider = new PGliteProvider(this, DB_NAME, true);
 				await this.pgProvider.initialize();
 				console.log("PGliteProvider initialized.");
 
@@ -220,7 +222,6 @@ export default class MyVectorPlugin extends Plugin {
 						);
 					}
 					await this.vectorStore.createTable(true);
-					await this.vectorStore.save();
 				}
 				this.isDbReady = true;
 				console.log(
@@ -332,21 +333,68 @@ class VectorizerSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Database Name")
-			.setDesc(
-				'The name of the database file to use (e.g., "my_embeddings"). Requires reload.'
-			)
-			.addText((text) =>
-				text
-					.setPlaceholder("Enter database name")
-					.setValue(this.plugin.settings.databaseName)
-					.onChange(async (value) => {
-						this.plugin.settings.databaseName = value;
-						await this.plugin.saveSettings();
-						new Notice(
-							"Database name changed. Please reload the plugin for changes to take effect."
-						);
+			.setName("Discard Database")
+			.setDesc("Permanently delete the PGlite database.")
+			.addButton((button) =>
+				button
+					.setButtonText("Discard DB")
+					.setCta()
+					.onClick(() => {
+						new DiscardDBModal(this.app, this.plugin).open();
 					})
 			);
+	}
+}
+
+class DiscardDBModal extends Modal {
+	plugin: MyVectorPlugin;
+
+	constructor(app: App, plugin: MyVectorPlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.createEl("h2", { text: "Discard Database" });
+		contentEl.createEl("p", {
+			text: "Are you sure you want to permanently discard the PGlite database? This action cannot be undone.",
+		});
+
+		new Setting(contentEl)
+			.addButton((button) =>
+				button
+					.setButtonText("Discard")
+					.setCta()
+					.onClick(async () => {
+						try {
+							if (this.plugin.pgProvider) {
+								await this.plugin.pgProvider.discardDB();
+								new Notice("Database discarded successfully.");
+							} else {
+								new Notice(
+									"Database provider not initialized."
+								);
+							}
+						} catch (error: any) {
+							console.error("Failed to discard database:", error);
+							new Notice(
+								`Failed to discard database: ${error.message}`
+							);
+						} finally {
+							this.close();
+						}
+					})
+			)
+			.addButton((button) =>
+				button.setButtonText("Cancel").onClick(() => {
+					this.close();
+				})
+			);
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }

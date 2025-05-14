@@ -74,7 +74,6 @@ export class CommandHandler {
 			return 0;
 		}
 		await this.vectorStore.upsertVectors(itemsToInsert);
-		await this.vectorStore.save();
 		return itemsToInsert.length;
 	}
 

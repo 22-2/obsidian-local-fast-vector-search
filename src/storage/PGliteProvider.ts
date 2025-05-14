@@ -1,6 +1,8 @@
+// src/storage/PGliteProvider.ts
 import { Plugin, normalizePath, requestUrl } from "obsidian";
 import { PGlite } from "@electric-sql/pglite";
-
+import { IdbFs } from "@electric-sql/pglite";
+import { deleteDB } from "idb";
 const PGLITE_VERSION = "0.2.14";
 
 export class PGliteProvider {
@@ -8,7 +10,6 @@ export class PGliteProvider {
 	private dbName: string;
 	private pgClient: PGlite | null = null;
 	private isInitialized: boolean = false;
-	private dbFilePath: string;
 	private relaxedDurability: boolean;
 
 	private resourceCachePaths: {
@@ -25,12 +26,6 @@ export class PGliteProvider {
 		this.plugin = plugin;
 		this.dbName = dbName;
 		this.relaxedDurability = relaxedDurability;
-
-		// データベースファイル自体のパス
-		this.dbFilePath = normalizePath(
-			`${this.plugin.manifest.dir}/${this.dbName}.tar.gz`
-		);
-		console.log("Database file path set to:", this.dbFilePath);
 
 		const cacheDir = normalizePath(
 			`${this.plugin.manifest.dir}/pglite-cache`
@@ -56,53 +51,22 @@ export class PGliteProvider {
 		}
 
 		try {
-			// リソースのロード（キャッシュからの読み込みまたはダウンロード）
 			const { fsBundle, wasmModule, vectorExtensionBundlePath } =
 				await this.loadPGliteResources();
 
-			// データベースファイルが存在するかチェック
-			const databaseFileExists =
-				await this.plugin.app.vault.adapter.exists(this.dbFilePath);
+			console.log(`Creating/Opening database: ${this.dbName}`);
+			this.pgClient = await this.createPGliteInstance({
+				fsBundle,
+				wasmModule,
+				vectorExtensionBundlePath,
+			});
 
-			if (databaseFileExists) {
-				// 既存データベースのロード
-				console.log("Loading existing database from:", this.dbFilePath);
-				const fileBuffer =
-					await this.plugin.app.vault.adapter.readBinary(
-						this.dbFilePath
-					);
-				const fileBlob = new Blob([fileBuffer], {
-					type: "application/x-gzip",
-				});
-
-				// PGliteインスタンスの作成（既存データ付き）
-				this.pgClient = await this.createPGliteInstance({
-					loadDataDir: fileBlob,
-					fsBundle,
-					wasmModule,
-					vectorExtensionBundlePath,
-				});
-			} else {
-				// 新規データベースの作成
-				console.log("Creating new database");
-				this.pgClient = await this.createPGliteInstance({
-					fsBundle,
-					wasmModule,
-					vectorExtensionBundlePath,
-				});
-			}
+			// インスタンス化が完了したらBlob URLを解放
+			URL.revokeObjectURL(vectorExtensionBundlePath.href);
 
 			this.isInitialized = true;
 			console.log("PGlite initialized successfully");
 
-			// データベースファイルとキャッシュファイルのディレクトリが存在することを確認
-			const dbDir = this.dbFilePath.substring(
-				0,
-				this.dbFilePath.lastIndexOf("/")
-			);
-			if (!(await this.plugin.app.vault.adapter.exists(dbDir))) {
-				await this.plugin.app.vault.adapter.mkdir(dbDir);
-			}
 			const cacheDir = this.resourceCachePaths!.fsBundle.substring(
 				0,
 				this.resourceCachePaths!.fsBundle.lastIndexOf("/")
@@ -130,34 +94,9 @@ export class PGliteProvider {
 		return this.isInitialized && this.pgClient !== null;
 	}
 
-	async save(): Promise<void> {
-		if (!this.pgClient || !this.isInitialized) {
-			console.log("Cannot save: PGlite not initialized");
-			return;
-		}
-
-		try {
-			console.log("Saving database to:", this.dbFilePath);
-			const blob: Blob = await this.pgClient.dumpDataDir("gzip");
-			const arrayBuffer = await blob.arrayBuffer();
-			await this.plugin.app.vault.adapter.writeBinary(
-				this.dbFilePath,
-				arrayBuffer
-			);
-			console.log("Database saved successfully");
-		} catch (error) {
-			console.error("Error saving database:", error);
-			throw error;
-		}
-	}
-
 	async close(): Promise<void> {
 		if (this.pgClient) {
 			try {
-				// Save before closing
-				await this.save();
-
-				// Close the connection
 				await this.pgClient.close();
 				this.pgClient = null;
 				this.isInitialized = false;
@@ -168,23 +107,30 @@ export class PGliteProvider {
 		}
 	}
 
-	async deleteDatabaseFile(): Promise<void> {
-		if (await this.plugin.app.vault.adapter.exists(this.dbFilePath)) {
-			try {
-				await this.plugin.app.vault.adapter.remove(this.dbFilePath);
-				console.log(`Database file deleted: ${this.dbFilePath}`);
-				this.isInitialized = false;
-				this.pgClient = null;
-			} catch (error) {
-				console.error(
-					`Error deleting database file ${this.dbFilePath}:`,
-					error
-				);
-				throw error;
+	async discardDB(): Promise<void> {
+		console.log(`Discarding PGlite database: ${this.dbName} using idb.`);
+		try {
+			if (this.pgClient) {
+				await this.close();
+				console.log("Closed existing PGlite client before discarding.");
 			}
-		} else {
-			console.log(
-				`Database file not found, no need to delete: ${this.dbFilePath}`
+
+			await deleteDB(this.dbName);
+			console.log(`Successfully discarded database: ${this.dbName}`);
+
+			this.pgClient = null;
+			this.isInitialized = false;
+		} catch (error: any) {
+			console.error(
+				`Error discarding PGlite database ${this.dbName}:`,
+				error
+			);
+			this.pgClient = null;
+			this.isInitialized = false;
+			const errorMessage = error?.message || "Unknown error";
+			const errorDetails = error?.name ? `(${error.name})` : "";
+			throw new Error(
+				`Failed to discard PGlite database ${this.dbName}: ${errorMessage} ${errorDetails}`
 			);
 		}
 	}
@@ -196,9 +142,11 @@ export class PGliteProvider {
 		vectorExtensionBundlePath: URL;
 	}): Promise<PGlite> {
 		// Create PGlite instance with options
+
 		return await PGlite.create({
 			...options,
 			relaxedDurability: this.relaxedDurability,
+			fs: new IdbFs(this.dbName), // ここで指定したdbNameのIndexedDBが使われる
 			fsBundle: options.fsBundle,
 			wasmModule: options.wasmModule,
 			extensions: {
@@ -216,8 +164,8 @@ export class PGliteProvider {
 			throw new Error("Resource cache paths not set.");
 		}
 
-		//@ts-ignore
-		window.process = undefined; // Ensure process is undefined
+		// //@ts-ignore
+		// window.process = undefined; // Ensure process is undefined
 
 		const resources = {
 			fsBundle: {
@@ -284,10 +232,12 @@ export class PGliteProvider {
 					const blob = new Blob([buffer], {
 						type: "application/gzip",
 					});
-					// 重要: createObjectURLで生成したURLは、不要になったらrevokeObjectURLで解放する必要がある。
-					// PGliteが内部で適切に処理するか、別途解放ロジックが必要か確認が必要。
-					// ここでは一旦そのままURLを返す。
-					return new URL(URL.createObjectURL(blob));
+					const blobUrl = URL.createObjectURL(blob);
+					console.log(
+						"Created Blob URL for vector extension bundle:",
+						blobUrl
+					);
+					return new URL(blobUrl);
 				},
 			},
 		};

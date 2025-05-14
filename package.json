@@ -29,6 +29,7 @@
 	"dependencies": {
 		"@electric-sql/pglite": "0.2.14",
 		"@huggingface/transformers": "3.4.2",
-		"esbuild-plugin-inline-worker": "^0.1.1"
+		"esbuild-plugin-inline-worker": "^0.1.1",
+		"idb": "^8.0.3"
 	}
 }

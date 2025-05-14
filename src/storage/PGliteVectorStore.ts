@@ -1,7 +1,6 @@
 import { PGliteProvider } from "./PGliteProvider";
 import { PGliteTableManager } from "./PGliteTableManager";
-
-const EMBEDDINGS_TABLE_NAME = "embeddings";
+import { EMBEDDINGS_TABLE_NAME } from "../constants";
 
 export interface VectorItem {
 	filePath: string;
@@ -56,11 +55,6 @@ export class PGliteVectorStore {
 
 	setDimensions(dimensions: number): void {
 		this.dimensions = dimensions;
-		// Update table manager's dimensions if it's already created
-		// This assumes PGliteTableManager might have a way to update dimensions,
-		// or it's recreated. For simplicity, we'll assume it's handled if needed,
-		// or that dimensions are set before table creation.
-		// If PGliteTableManager needs dynamic dimension updates, it would require a setter there.
 		this.tableManager = new PGliteTableManager(
 			this.provider,
 			this.tableName,
@@ -158,11 +152,6 @@ export class PGliteVectorStore {
 			);
 			throw error;
 		}
-	}
-
-	async save(): Promise<void> {
-		if (!this.isReady()) return; // Keep this check as it doesn't involve getClient()
-		await this.provider.save();
 	}
 
 	async upsertVectors(
@@ -286,7 +275,7 @@ export class PGliteVectorStore {
 		await this.provider.close(); // Close existing connection if any
 
 		console.log("Rebuilding storage: Deleting existing database file.");
-		await this.provider.deleteDatabaseFile();
+		await this.provider.discardDB();
 
 		console.log("Rebuilding storage: Re-initializing provider.");
 		await this.provider.initialize(); // Re-initialize to create a new DB
