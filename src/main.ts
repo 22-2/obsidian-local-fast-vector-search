@@ -12,9 +12,10 @@ import { CommandHandler } from "./commands";
 import { WorkerProxyVectorizer } from "./vectorizers/WorkerProxyVectorizer";
 import { PGliteProvider } from "./storage/PGliteProvider";
 import { PGliteVectorStore } from "./storage/PGliteVectorStore";
-import { SearchModal } from "./ui/SearchModal";
+import { SearchModal } from "./ui/modals/SearchModal";
 import { DB_NAME } from "./shared/constants/appConstants";
 import { TextChunker } from "./chunkers/TextChunker";
+import { NotificationService } from "./shared/services/NotificationService";
 import { VectorizationService } from "./services/VectorizationService";
 import { SearchService } from "./services/SearchService";
 import { StorageManagementService } from "./services/StorageManagementService";
@@ -43,7 +44,8 @@ export default class MyVectorPlugin extends Plugin {
 	vectorizationService: VectorizationService | null = null;
 	searchService: SearchService | null = null;
 	storageManagementService: StorageManagementService | null = null;
-	textChunker: TextChunker | null = null; // TextChunkerもここで初期化
+	notificationService: NotificationService | null = null;
+	textChunker: TextChunker | null = null;
 
 	async onload() {
 		this.settings = Object.assign(
@@ -118,7 +120,15 @@ export default class MyVectorPlugin extends Plugin {
 					return;
 				}
 
-				new SearchModal(this.app, this.commandHandler).open();
+				if (!this.notificationService) {
+					new Notice("Notification service not ready.");
+					return;
+				}
+				new SearchModal(
+					this.app,
+					this.commandHandler,
+					this.notificationService
+				).open();
 			},
 		});
 
@@ -277,6 +287,10 @@ export default class MyVectorPlugin extends Plugin {
 						new StorageManagementService(this.vectorStore);
 					console.log("StorageManagementService initialized.");
 				}
+				if (!this.notificationService) {
+					this.notificationService = new NotificationService();
+					console.log("NotificationService initialized.");
+				}
 			}
 
 			// 5. CommandHandler の初期化 (after services are ready)
@@ -349,6 +363,7 @@ export default class MyVectorPlugin extends Plugin {
 		this.commandHandler = null;
 		this.pgProvider = null;
 		this.vectorStore = null;
+		this.notificationService = null;
 		this.textChunker = null;
 		this.vectorizationService = null;
 		this.searchService = null;

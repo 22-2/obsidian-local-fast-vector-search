@@ -1,16 +1,23 @@
-import { App, Modal, Setting, Notice, TFile } from "obsidian";
-import { CommandHandler } from "../commands";
-import type { SimilarityResultItem } from "../storage/PGliteVectorStore";
+import { App, Modal, Setting, TFile } from "obsidian";
+import { CommandHandler } from "../../commands";
+import type { SimilarityResultItem } from "../../storage/PGliteVectorStore";
+import { NotificationService } from "../../shared/services/NotificationService";
 
 export class SearchModal extends Modal {
 	private commandHandler: CommandHandler;
+	private notificationService: NotificationService;
 	private query: string = "";
 	private results: SimilarityResultItem[] = [];
 	private resultsEl!: HTMLElement;
 
-	constructor(app: App, commandHandler: CommandHandler) {
+	constructor(
+		app: App,
+		commandHandler: CommandHandler,
+		notificationService: NotificationService
+	) {
 		super(app);
 		this.commandHandler = commandHandler;
+		this.notificationService = notificationService;
 		this.modalEl.addClass("vector-search-modal");
 	}
 
@@ -52,32 +59,36 @@ export class SearchModal extends Modal {
 
 	async performSearch() {
 		if (!this.query.trim()) {
-			new Notice("Please enter a search query.");
+			this.notificationService.showNotice("Please enter a search query.");
 			return;
 		}
 		if (!this.commandHandler) {
-			new Notice(
+			this.notificationService.showNotice(
 				"CommandHandler is not available. Please try reloading the plugin."
 			);
 			return;
 		}
 
-		const notice = new Notice("Searching...", 0);
+		const notice = this.notificationService.showNotice("Searching...", 0);
 		try {
 			this.results = await this.commandHandler.searchSimilarNotes(
 				this.query,
 				10
 			); // Search top 10
 			await this.renderResults();
-			notice.setMessage(`Found ${this.results.length} similar notes.`);
+			this.notificationService.showNotice(
+				`Found ${this.results.length} similar notes.`
+			);
 		} catch (error: any) {
 			console.error("Error during search:", error);
-			new Notice(`Search failed: ${error.message}`);
+			this.notificationService.showNotice(
+				`Search failed: ${error.message}`
+			);
 			this.results = [];
 			await this.renderResults();
-			notice.setMessage("Search failed.");
+			this.notificationService.showNotice("Search failed.");
 		} finally {
-			setTimeout(() => notice.hide(), 3000);
+			// NotificationService handles hiding notices, no need for setTimeout here
 		}
 	}
 
@@ -93,7 +104,7 @@ export class SearchModal extends Modal {
 		const ul = this.resultsEl.createEl("ul");
 		ul.addClass("vector-search-result-list");
 
-		this.results.forEach(async (result) => {
+		for (const result of this.results) {
 			const li = ul.createEl("li");
 			li.addClass("vector-search-result-item");
 
@@ -157,7 +168,7 @@ export class SearchModal extends Modal {
 					cls: "vector-search-result-content",
 				});
 			}
-		});
+		}
 	}
 
 	onClose() {
