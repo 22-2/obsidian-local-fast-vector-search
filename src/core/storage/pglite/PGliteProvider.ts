@@ -1,8 +1,10 @@
-import { Plugin, normalizePath, requestUrl } from "obsidian";
+import { Plugin } from "obsidian";
 import { PGlite } from "@electric-sql/pglite";
 import { IdbFs } from "@electric-sql/pglite";
-import { deleteDB } from "idb";
+import { deleteDB, openDB, IDBPDatabase } from "idb";
 const PGLITE_VERSION = "0.2.14";
+const IDB_NAME = "pglite-resources-cache";
+const IDB_STORE_NAME = "resources";
 
 import { LoggerService } from "../../../shared/services/LoggerService";
 
@@ -14,11 +16,11 @@ export class PGliteProvider {
 	private relaxedDurability: boolean;
 	private logger: LoggerService | null;
 
-	private resourceCachePaths: {
+	private resourceCacheKeys: {
 		fsBundle: string;
 		wasmModule: string;
 		vectorExtensionBundle: string;
-	} | null = null;
+	};
 
 	constructor(
 		plugin: Plugin,
@@ -31,24 +33,13 @@ export class PGliteProvider {
 		this.dbName = dbName;
 		this.relaxedDurability = relaxedDurability;
 
-		const cacheDir = normalizePath(
-			`${this.plugin.manifest.dir}/pglite-cache`
-		);
-		this.resourceCachePaths = {
-			fsBundle: normalizePath(
-				`${cacheDir}/pglite-${PGLITE_VERSION}-postgres.data`
-			),
-			wasmModule: normalizePath(
-				`${cacheDir}/pglite-${PGLITE_VERSION}-postgres.wasm`
-			),
-			vectorExtensionBundle: normalizePath(
-				`${cacheDir}/pglite-${PGLITE_VERSION}-vector.tar.gz`
-			),
+		// Keys for IndexedDB store
+		this.resourceCacheKeys = {
+			fsBundle: `pglite-${PGLITE_VERSION}-postgres.data`,
+			wasmModule: `pglite-${PGLITE_VERSION}-postgres.wasm`,
+			vectorExtensionBundle: `pglite-${PGLITE_VERSION}-vector.tar.gz`,
 		};
-		this.logger?.verbose_log(
-			"PGlite resource cache directory set to:",
-			cacheDir
-		);
+		this.logger?.verbose_log("PGlite resource IndexedDB keys initialized.");
 	}
 
 	async initialize(): Promise<void> {
@@ -75,14 +66,6 @@ export class PGliteProvider {
 
 			this.isInitialized = true;
 			this.logger?.verbose_log("PGlite initialized successfully");
-
-			const cacheDir = this.resourceCachePaths!.fsBundle.substring(
-				0,
-				this.resourceCachePaths!.fsBundle.lastIndexOf("/")
-			);
-			if (!(await this.plugin.app.vault.adapter.exists(cacheDir))) {
-				await this.plugin.app.vault.adapter.mkdir(cacheDir);
-			}
 		} catch (error) {
 			this.logger?.error("Error initializing PGlite:", error);
 			// 初期化失敗時は状態をリセット
@@ -130,7 +113,7 @@ export class PGliteProvider {
 				);
 			}
 
-			await deleteDB("/pglite/" + this.dbName);
+			await deleteDB("/pglite/" + this.dbName); // Use imported deleteIdb
 			this.logger?.verbose_log(
 				`Successfully discarded database: ${this.dbName}`
 			);
@@ -163,11 +146,21 @@ export class PGliteProvider {
 		return await PGlite.create({
 			...options,
 			relaxedDurability: this.relaxedDurability,
-			fs: new IdbFs(this.dbName), // ここで指定したdbNameのIndexedDBが使われる
+			fs: new IdbFs(this.dbName),
 			fsBundle: options.fsBundle,
 			wasmModule: options.wasmModule,
 			extensions: {
 				vector: options.vectorExtensionBundlePath,
+			},
+		});
+	}
+
+	private async openIndexedDB(): Promise<IDBPDatabase> {
+		return openDB(IDB_NAME, 1, {
+			upgrade(db) {
+				if (!db.objectStoreNames.contains(IDB_STORE_NAME)) {
+					db.createObjectStore(IDB_STORE_NAME);
+				}
 			},
 		});
 	}
@@ -177,24 +170,17 @@ export class PGliteProvider {
 		wasmModule: WebAssembly.Module;
 		vectorExtensionBundlePath: URL;
 	}> {
-		if (!this.resourceCachePaths) {
-			throw new Error("Resource cache paths not set.");
-		}
-
-		// //@ts-ignore
-		// window.process = undefined; // Ensure process is undefined
-
 		const resources = {
 			fsBundle: {
 				url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.data`,
-				path: this.resourceCachePaths.fsBundle,
+				key: this.resourceCacheKeys.fsBundle,
 				type: "application/octet-stream",
 				process: async (buffer: ArrayBuffer) =>
 					new Blob([buffer], { type: "application/octet-stream" }),
 			},
 			wasmModule: {
 				url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.wasm`,
-				path: this.resourceCachePaths.wasmModule,
+				key: this.resourceCacheKeys.wasmModule,
 				type: "application/wasm",
 				process: async (buffer: ArrayBuffer) => {
 					const wasmBytes = new Uint8Array(buffer);
@@ -245,7 +231,7 @@ export class PGliteProvider {
 			},
 			vectorExtensionBundle: {
 				url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/vector.tar.gz`,
-				path: this.resourceCachePaths.vectorExtensionBundle,
+				key: this.resourceCacheKeys.vectorExtensionBundle,
 				type: "application/gzip",
 				process: async (buffer: ArrayBuffer) => {
 					const blob = new Blob([buffer], {
@@ -262,81 +248,84 @@ export class PGliteProvider {
 		};
 
 		const loadedResources: any = {};
+		let db: IDBPDatabase | undefined;
 
-		for (const [key, resourceInfo] of Object.entries(resources)) {
-			this.logger?.verbose_log(
-				`Attempting to load ${key} from cache: ${resourceInfo.path}`
-			);
-			try {
-				const fileExists = await this.plugin.app.vault.adapter.exists(
-					resourceInfo.path
+		try {
+			db = await this.openIndexedDB();
+
+			for (const [resourceName, resourceInfo] of Object.entries(
+				resources
+			)) {
+				this.logger?.verbose_log(
+					`Attempting to load ${resourceName} from IndexedDB cache: ${resourceInfo.key}`
 				);
 
-				let buffer: ArrayBuffer;
+				let cachedData: ArrayBuffer | undefined = await db.get(
+					IDB_STORE_NAME,
+					resourceInfo.key
+				);
 
-				if (fileExists) {
+				if (cachedData) {
 					this.logger?.verbose_log(
-						`${key} found in cache. Reading...`
-					);
-					buffer = await this.plugin.app.vault.adapter.readBinary(
-						resourceInfo.path
-					);
-					this.logger?.verbose_log(
-						`${key} read from cache (${buffer.byteLength} bytes).`
+						`${resourceName} found in IndexedDB cache. Processing...`
 					);
 				} else {
 					this.logger?.verbose_log(
-						`${key} not found in cache. Downloading from ${resourceInfo.url}...`
+						`${resourceName} not found in IndexedDB cache. Downloading from ${resourceInfo.url}...`
 					);
-					const response = await requestUrl({
-						url: resourceInfo.url,
-						method: "GET",
-					});
+					const response = await fetch(resourceInfo.url);
 
-					if (response.status !== 200) {
+					if (!response.ok) {
 						throw new Error(
-							`Failed to download ${key}: Status ${response.status}`
+							`Failed to download ${resourceName}: Status ${response.status}`
 						);
 					}
 
-					buffer = response.arrayBuffer;
+					cachedData = await response.arrayBuffer();
 					this.logger?.verbose_log(
-						`${key} downloaded (${buffer.byteLength} bytes).`
+						`${resourceName} downloaded (${cachedData.byteLength} bytes).`
 					);
-
-					const cacheDir = resourceInfo.path.substring(
-						0,
-						resourceInfo.path.lastIndexOf("/")
-					);
-					if (
-						!(await this.plugin.app.vault.adapter.exists(cacheDir))
-					) {
-						await this.plugin.app.vault.adapter.mkdir(cacheDir);
-					}
 
 					this.logger?.verbose_log(
-						`Saving ${key} to cache: ${resourceInfo.path}`
+						`Saving ${resourceName} to IndexedDB cache: ${resourceInfo.key}`
 					);
-					await this.plugin.app.vault.adapter.writeBinary(
-						resourceInfo.path,
-						buffer
-					);
-					this.logger?.verbose_log(`${key} saved to cache.`);
-				}
 
-				loadedResources[key] = await resourceInfo.process(buffer);
-				this.logger?.verbose_log(`${key} processed successfully.`);
-			} catch (error) {
-				this.logger?.error(`Error loading or caching ${key}:`, error);
-				if (error instanceof Error) {
-					this.logger?.error(
-						`Error details for ${key}: Name: ${error.name}, Message: ${error.message}`
+					await db.put(IDB_STORE_NAME, cachedData, resourceInfo.key);
+					this.logger?.verbose_log(
+						`${resourceName} saved to IndexedDB cache.`
 					);
 				}
-				throw new Error(
-					`Failed to load or cache PGlite resource "${key}": ${error}`
+				if (resourceName === "fsBundle") {
+					loadedResources[resourceName] = new Blob([cachedData], {
+						type: resourceInfo.type,
+					});
+				} else if (resourceName === "vectorExtensionBundle") {
+					loadedResources[resourceName] = await resourceInfo.process(
+						cachedData
+					);
+				} else {
+					loadedResources[resourceName] = await resourceInfo.process(
+						cachedData
+					);
+				}
+				this.logger?.verbose_log(
+					`${resourceName} processed successfully.`
 				);
 			}
+		} catch (error) {
+			this.logger?.error(
+				`Error loading or caching PGlite resource:`,
+				error
+			);
+			if (error instanceof Error) {
+				this.logger?.error(
+					`Error details: Name: ${error.name}, Message: ${error.message}`
+				);
+			}
+			throw new Error(
+				`Failed to load or cache PGlite resource: ${error}`
+			);
+		} finally {
 		}
 
 		return {
