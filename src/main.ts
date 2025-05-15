@@ -10,16 +10,16 @@ import { IVectorizer } from "./vectorizers/IVectorizer";
 import { createTransformersVectorizer } from "./vectorizers/VectorizerFactory";
 import { CommandHandler } from "./commands";
 import { WorkerProxyVectorizer } from "./vectorizers/WorkerProxyVectorizer";
-import { PGliteProvider } from "./infrastructure/storage/pglite/storage/PGliteProvider";
-import { PGliteVectorStore } from "./infrastructure/storage/pglite/storage/PGliteVectorStore";
+import { PGliteProvider } from "./storage/pglite/PGliteProvider";
+import { PGliteVectorStore } from "./storage/pglite/PGliteVectorStore";
 import { SearchModal } from "./ui/modals/SearchModal";
 import { DB_NAME } from "./shared/constants/appConstants";
 import { TextChunker } from "./chunkers/TextChunker";
 import { NotificationService } from "./shared/services/NotificationService";
 import { VectorizationService } from "./services/VectorizationService";
 import { SearchService } from "./services/SearchService";
-import { StorageManagementService } from "./infrastructure/storage/StorageManagementService";
-import { PGliteTableManager } from "./infrastructure/storage/pglite/storage/PGliteTableManager";
+import { StorageManagementService } from "./services/StorageManagementService";
+import { PGliteTableManager } from "./storage/pglite/PGliteTableManager";
 
 const EMBEDDING_DIMENSION = 256;
 

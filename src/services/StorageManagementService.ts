@@ -1,5 +1,5 @@
-import type { PGliteProvider } from "../../infrastructure/storage/pglite/storage/PGliteProvider";
-import type { PGliteTableManager } from "../../infrastructure/storage/pglite/storage/PGliteTableManager";
+import type { PGliteProvider } from "../storage/pglite/PGliteProvider";
+import type { PGliteTableManager } from "../storage/pglite/PGliteTableManager";
 
 export class StorageManagementService {
 	constructor(

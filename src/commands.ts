@@ -1,8 +1,8 @@
 import { Notice, App } from "obsidian";
 import type { VectorizationService } from "./services/VectorizationService";
 import type { SearchService } from "./services/SearchService";
-import type { StorageManagementService } from "./infrastructure/storage/StorageManagementService";
-import type { SimilarityResultItem } from "./infrastructure/storage/pglite/storage/PGliteVectorStore";
+import type { StorageManagementService } from "./services/StorageManagementService";
+import type { SimilarityResultItem } from "./storage/pglite/PGliteVectorStore";
 // SearchModal は CommandHandler 経由で SearchService を利用する形でも良いし、
 // 直接 SearchService を渡す形でも良い。ここでは CommandHandler が仲介する。
 

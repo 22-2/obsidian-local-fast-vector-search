@@ -1,6 +1,6 @@
 import { App, Modal, Setting, TFile } from "obsidian";
 import { CommandHandler } from "../../commands";
-import type { SimilarityResultItem } from "../../infrastructure/storage/pglite/storage/PGliteVectorStore";
+import type { SimilarityResultItem } from "../../storage/pglite/PGliteVectorStore";
 import { NotificationService } from "../../shared/services/NotificationService";
 
 export class SearchModal extends Modal {
