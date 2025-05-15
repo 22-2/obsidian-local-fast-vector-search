@@ -1,7 +1,7 @@
 import { PGliteInterface, Transaction } from "@electric-sql/pglite";
 import { PGliteProvider } from "./PGliteProvider";
 import { PGliteTableManager } from "./PGliteTableManager";
-import { EMBEDDINGS_TABLE_NAME } from "../shared/constants/appConstants";
+import { EMBEDDINGS_TABLE_NAME } from "../../../../shared/constants/appConstants";
 
 export interface VectorItem {
 	filePath: string;
@@ -260,24 +260,5 @@ export class PGliteVectorStore {
 
 	getProvider(): PGliteProvider {
 		return this.provider;
-	}
-
-	async rebuildStorage(): Promise<void> {
-		console.log(
-			"Rebuilding storage: Closing existing provider connection."
-		);
-		await this.provider.close(); // Close existing connection if any
-
-		console.log("Rebuilding storage: Deleting existing database file.");
-		await this.provider.discardDB();
-
-		console.log("Rebuilding storage: Re-initializing provider.");
-		await this.provider.initialize(); // Re-initialize to create a new DB
-
-		console.log("Rebuilding storage: Creating new embeddings table.");
-		// Since the DB is new, force=false is appropriate for createTable.
-		// createTable will handle setting up schema and extensions.
-		await this.createTable(false);
-		console.log("Storage rebuild complete: New embeddings table created.");
 	}
 }

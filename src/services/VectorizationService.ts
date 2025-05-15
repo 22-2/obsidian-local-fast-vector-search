@@ -4,7 +4,7 @@ import { TextChunker } from "../chunkers/TextChunker";
 import type {
 	PGliteVectorStore,
 	VectorItem,
-} from "../storage/PGliteVectorStore";
+} from "../infrastructure/storage/pglite/storage/PGliteVectorStore";
 
 export class VectorizationService {
 	constructor(

@@ -10,15 +10,17 @@ import { IVectorizer } from "./vectorizers/IVectorizer";
 import { createTransformersVectorizer } from "./vectorizers/VectorizerFactory";
 import { CommandHandler } from "./commands";
 import { WorkerProxyVectorizer } from "./vectorizers/WorkerProxyVectorizer";
-import { PGliteProvider } from "./storage/PGliteProvider";
-import { PGliteVectorStore } from "./storage/PGliteVectorStore";
+import { PGliteProvider } from "./infrastructure/storage/pglite/storage/PGliteProvider";
+import { PGliteVectorStore } from "./infrastructure/storage/pglite/storage/PGliteVectorStore";
 import { SearchModal } from "./ui/modals/SearchModal";
 import { DB_NAME } from "./shared/constants/appConstants";
 import { TextChunker } from "./chunkers/TextChunker";
 import { NotificationService } from "./shared/services/NotificationService";
 import { VectorizationService } from "./services/VectorizationService";
 import { SearchService } from "./services/SearchService";
-import { StorageManagementService } from "./services/StorageManagementService";
+import { StorageManagementService } from "./infrastructure/storage/StorageManagementService";
+import { PGliteTableManager } from "./infrastructure/storage/pglite/storage/PGliteTableManager";
+
 const EMBEDDING_DIMENSION = 256;
 
 interface PluginSettings {
@@ -284,7 +286,14 @@ export default class MyVectorPlugin extends Plugin {
 				}
 				if (!this.storageManagementService) {
 					this.storageManagementService =
-						new StorageManagementService(this.vectorStore);
+						new StorageManagementService(
+							this.pgProvider!,
+							new PGliteTableManager(
+								this.pgProvider!,
+								this.vectorStore!.getTableName(),
+								this.vectorStore!.getDimensions()
+							)
+						);
 					console.log("StorageManagementService initialized.");
 				}
 				if (!this.notificationService) {
@@ -356,7 +365,9 @@ export default class MyVectorPlugin extends Plugin {
 			console.log("Closing PGlite database connection...");
 			await this.pgProvider
 				.close()
-				.catch((err) => console.error("Error closing PGlite:", err));
+				.catch((err: any) =>
+					console.error("Error closing PGlite:", err)
+				);
 		}
 
 		this.vectorizer = null;

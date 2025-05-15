@@ -2,7 +2,7 @@ import type { IVectorizer } from "../vectorizers/IVectorizer";
 import type {
 	PGliteVectorStore,
 	SimilarityResultItem,
-} from "../storage/PGliteVectorStore";
+} from "../infrastructure/storage/pglite/storage/PGliteVectorStore";
 
 export class SearchService {
 	constructor(

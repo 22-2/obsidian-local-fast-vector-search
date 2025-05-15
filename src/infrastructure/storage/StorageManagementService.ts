@@ -1,7 +1,11 @@
-import type { PGliteVectorStore } from "../storage/PGliteVectorStore";
+import type { PGliteProvider } from "../../infrastructure/storage/pglite/storage/PGliteProvider";
+import type { PGliteTableManager } from "../../infrastructure/storage/pglite/storage/PGliteTableManager";
 
 export class StorageManagementService {
-	constructor(private vectorStore: PGliteVectorStore) {}
+	constructor(
+		private provider: PGliteProvider,
+		private tableManager: PGliteTableManager
+	) {}
 
 	public async rebuildStorage(
 		onProgress?: (message: string) => void
@@ -11,24 +15,24 @@ export class StorageManagementService {
 				onProgress(
 					"Rebuilding storage: Closing provider connection..."
 				);
-			await this.vectorStore.getProvider().close();
+			await this.provider.close();
 
 			if (onProgress)
 				onProgress(
 					"Rebuilding storage: Deleting existing database file..."
 				);
-			await this.vectorStore.getProvider().discardDB();
+			await this.provider.discardDB();
 
 			if (onProgress)
 				onProgress("Rebuilding storage: Re-initializing provider...");
-			await this.vectorStore.getProvider().initialize();
+			await this.provider.initialize();
 
 			if (onProgress)
 				onProgress(
 					"Rebuilding storage: Creating new embeddings table..."
 				);
 			// The DB is new, so force=false is appropriate. createTable handles schema/extensions.
-			await this.vectorStore.createTable(false);
+			await this.tableManager.createTable(false);
 
 			if (onProgress) onProgress("Storage rebuild complete.");
 			console.log(
