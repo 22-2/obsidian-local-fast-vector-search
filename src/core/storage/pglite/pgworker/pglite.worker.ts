@@ -9,7 +9,7 @@ const PGLITE_VERSION = "0.2.14";
 const IDB_NAME_RESOURCES = "pglite-resources-cache";
 const IDB_STORE_NAME_RESOURCES = "resources";
 
-interface CustomPGliteWorkerOptions extends PGliteWorkerOptions {
+interface WorkerInitOptions extends PGliteWorkerOptions {
 	dbName: string;
 	tableName: string;
 	dimensions: number;
@@ -71,10 +71,9 @@ async function getPGliteResources(): Promise<{
 		});
 
 		for (const [resourceName, resourceInfo] of Object.entries(resources)) {
-			// メインスレッドに進行状況を通知
 			postMessage({
 				type: "status",
-				payload: `[Worker] Loading ${resourceName}...`,
+				payload: `Loading ${resourceName}...`,
 			});
 			let cachedData: ArrayBuffer | undefined = await db.get(
 				IDB_STORE_NAME_RESOURCES,
@@ -84,12 +83,12 @@ async function getPGliteResources(): Promise<{
 			if (cachedData) {
 				postMessage({
 					type: "status",
-					payload: `[Worker] ${resourceName} found in cache.`,
+					payload: `${resourceName} found in cache.`,
 				});
 			} else {
 				postMessage({
 					type: "status",
-					payload: `[Worker] ${resourceName} not in cache, downloading...`,
+					payload: `${resourceName} not in cache, downloading...`,
 				});
 				const response = await fetch(resourceInfo.url);
 				if (!response.ok) {
@@ -105,7 +104,7 @@ async function getPGliteResources(): Promise<{
 				);
 				postMessage({
 					type: "status",
-					payload: `[Worker] ${resourceName} downloaded and cached.`,
+					payload: `${resourceName} downloaded and cached.`,
 				});
 			}
 			loadedResources[resourceName] = await resourceInfo.process(
@@ -113,10 +112,10 @@ async function getPGliteResources(): Promise<{
 			);
 		}
 	} catch (error) {
-		console.error("[Worker] Error loading PGlite resources:", error);
+		console.error("Error loading PGlite resources:", error);
 		postMessage({
 			type: "error",
-			payload: `[Worker] Error loading resources: ${error}`,
+			payload: `Error loading resources: ${String(error)}`,
 		});
 		throw error;
 	} finally {
@@ -136,32 +135,32 @@ function quoteIdentifier(identifier: string): string {
 
 worker({
 	async init(options: PGliteWorkerOptions): Promise<PGlite> {
-		const customOptions = options as CustomPGliteWorkerOptions;
-		let db: PGlite;
+		const workerOptions = options as WorkerInitOptions;
+		let dbInst: PGlite;
 		let vectorBundleUrl: URL | null = null;
+
 		try {
 			postMessage({
 				type: "status",
-				payload: "[Worker] Initializing PGlite...",
+				payload: "Initializing PGlite...",
 			});
 			const resources = await getPGliteResources();
 			vectorBundleUrl = resources.vectorExtensionBundlePath;
 
-			const dbPath = `idb://${customOptions.dbName}`;
+			const dbPath = `idb://${workerOptions.dbName}`;
 			postMessage({
 				type: "status",
-				payload: `[Worker] Creating PGlite instance for ${dbPath}`,
+				payload: `Creating PGlite instance for ${dbPath}`,
 			});
-
 			postMessage({
 				type: "status",
 				payload: resources.vectorExtensionBundlePath.toString(),
 			});
 
-			db = (await PGlite.create(dbPath, {
-				relaxedDurability: customOptions.relaxedDurability ?? true,
+			dbInst = (await PGlite.create(dbPath, {
+				relaxedDurability: workerOptions.relaxedDurability ?? true,
 				fsBundle: resources.fsBundle,
-				fs: new IdbFs(options.dbName),
+				fs: new IdbFs(workerOptions.dbName),
 				wasmModule: resources.wasmModule,
 				extensions: {
 					vector: resources.vectorExtensionBundlePath,
@@ -169,13 +168,13 @@ worker({
 			})) as PGlite;
 			postMessage({
 				type: "status",
-				payload: "[Worker] PGlite instance created.",
+				payload: "PGlite instance created.",
 			});
 		} catch (error) {
-			console.error("[Worker] Error creating PGlite instance:", error);
+			console.error("Error creating PGlite instance:", error);
 			postMessage({
 				type: "error",
-				payload: `[Worker] Error creating PGlite: ${error}`,
+				payload: `Error creating PGlite: ${String(error)}`,
 			});
 			if (vectorBundleUrl) URL.revokeObjectURL(vectorBundleUrl.href);
 			throw error;
@@ -184,50 +183,50 @@ worker({
 				URL.revokeObjectURL(vectorBundleUrl.href);
 				postMessage({
 					type: "status",
-					payload: "[Worker] Revoked Blob URL for vector extension.",
+					payload: "Revoked Blob URL for vector extension.",
 				});
 			}
 		}
 
-		const tableName = customOptions.tableName;
-		const dimensions = customOptions.dimensions;
+		const tableName = workerOptions.tableName;
+		const dimensions = workerOptions.dimensions;
 		const indexName = `${tableName}_hnsw_idx`;
 
 		postMessage({
 			type: "status",
-			payload: `[Worker] Ensuring schema for table: ${tableName}, dimensions: ${dimensions}`,
+			payload: `Ensuring schema for table: ${tableName}, dimensions: ${dimensions}`,
 		});
 
-		await db.exec(SQL_QUERIES.CREATE_EXTENSION);
+		await dbInst.exec(SQL_QUERIES.CREATE_EXTENSION);
 		postMessage({
 			type: "status",
-			payload: "[Worker] Vector extension ensured.",
+			payload: "Vector extension ensured.",
 		});
 
 		const createTableSql = SQL_QUERIES.CREATE_TABLE.replace(
 			"$1",
 			quoteIdentifier(tableName)
 		).replace("$2", dimensions.toString());
-		await db.exec(createTableSql);
+		await dbInst.exec(createTableSql);
 		postMessage({
 			type: "status",
-			payload: `[Worker] Table ${tableName} ensured.`,
+			payload: `Table ${tableName} ensured.`,
 		});
 
 		const createIndexSql = SQL_QUERIES.CREATE_HNSW_INDEX.replace(
 			"$1",
 			quoteIdentifier(indexName)
 		).replace("$2", quoteIdentifier(tableName));
-		await db.exec(createIndexSql);
+		await dbInst.exec(createIndexSql);
 		postMessage({
 			type: "status",
-			payload: `[Worker] Index ${indexName} for table ${tableName} ensured.`,
+			payload: `Index ${indexName} for table ${tableName} ensured.`,
 		});
 
 		postMessage({
 			type: "status",
-			payload: "[Worker] PGlite initialization complete.",
+			payload: "PGlite initialization complete.",
 		});
-		return db;
+		return dbInst;
 	},
 });

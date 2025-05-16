@@ -14,7 +14,7 @@ function postLogMessage(
 	...args: any[]
 ) {
 	postMessage({
-		type: "log",
+		type: "status",
 		payload: {
 			level,
 			message,
@@ -31,10 +31,6 @@ if (
 	typeof self !== "undefined" &&
 	typeof (self as any).process !== "undefined"
 ) {
-	postLogMessage(
-		"warn",
-		"[Worker] 'self.process' found. Setting to undefined to hint browser/worker environment."
-	);
 	(self as any).process = undefined;
 }
 
@@ -59,7 +55,7 @@ async function initializeEmbeddingModel() {
 		const AutoModel = transformers.AutoModel;
 		const AutoTokenizer = transformers.AutoTokenizer;
 
-		postLogMessage("verbose", "[Worker] Starting model download/load...");
+		postLogMessage("verbose", "Starting model download/load...");
 		const modelStartTime = performance.now();
 		model = await AutoModel.from_pretrained(
 			"cfsdwe/static-embedding-japanese-for-js",
@@ -74,16 +70,12 @@ async function initializeEmbeddingModel() {
 		const modelEndTime = performance.now();
 		postLogMessage(
 			"verbose",
-			`[Worker] Model loaded in ${(
-				(modelEndTime - modelStartTime) /
-				1000
-			).toFixed(2)} seconds.`
+			`Model loaded in ${((modelEndTime - modelStartTime) / 1000).toFixed(
+				2
+			)} seconds.`
 		);
 
-		postLogMessage(
-			"verbose",
-			"[Worker] Starting tokenizer download/load..."
-		);
+		postLogMessage("verbose", "Starting tokenizer download/load...");
 		const tokenizerStartTime = performance.now();
 		tokenizer = await AutoTokenizer.from_pretrained(
 			"cfsdwe/static-embedding-japanese-for-js"
@@ -91,7 +83,7 @@ async function initializeEmbeddingModel() {
 		const tokenizerEndTime = performance.now();
 		postLogMessage(
 			"verbose",
-			`[Worker] Tokenizer loaded in ${(
+			`Tokenizer loaded in ${(
 				(tokenizerEndTime - tokenizerStartTime) /
 				1000
 			).toFixed(2)} seconds.`
@@ -103,7 +95,7 @@ async function initializeEmbeddingModel() {
 
 		(self as any).process = originalProcess; // 元の process を復元
 	} catch (error: any) {
-		postLogMessage("error", "[Worker] Initialization failed:", error);
+		postLogMessage("error", "Initialization failed:", error);
 		postMessage({
 			type: "error",
 			payload: `Initialization failed: ${error.message}`,
@@ -141,11 +133,7 @@ async function vectorize(sentences: string[]): Promise<number[][]> {
 			const denom = mask.sum(1).clamp_(1e-9, Infinity);
 			embeddingTensor = sum.div(denom);
 		} else {
-			postLogMessage(
-				"error",
-				"[Worker] Model output keys:",
-				Object.keys(outputs)
-			);
+			postLogMessage("error", "Model output keys:", Object.keys(outputs));
 			throw new Error("Embedding tensor not found in model output.");
 		}
 
@@ -166,7 +154,7 @@ async function vectorize(sentences: string[]): Promise<number[][]> {
 
 		return resultVectors;
 	} catch (error) {
-		postLogMessage("error", "[Worker] Vectorization error:", error);
+		postLogMessage("error", "Vectorization error:", error);
 		throw error;
 	}
 }
@@ -190,14 +178,10 @@ worker.onmessage = async (event: MessageEvent) => {
 				postMessage({ type: "vectorizeResult", payload: vectors, id });
 				break;
 			default:
-				postLogMessage("warn", "[Worker] Unknown message type:", type);
+				postLogMessage("warn", "Unknown message type:", type);
 		}
 	} catch (error: any) {
-		postLogMessage(
-			"error",
-			`[Worker] Error processing message ${type}:`,
-			error
-		);
+		postLogMessage("error", `Error processing message ${type}:`, error);
 		postMessage({ type: "error", payload: error.message, id });
 	}
 };

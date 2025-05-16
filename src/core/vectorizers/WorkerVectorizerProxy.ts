@@ -37,19 +37,19 @@ export class WorkerProxyVectorizer implements IVectorizer {
 					this.isWorkerInitialized = data.payload;
 					if (this.isWorkerInitialized) {
 						this.logger?.verbose_log(
-							"WorkerProxy: Worker initialization successful."
+							"WorkerVectorizerProxy: Worker initialization successful."
 						);
 						resolve(true);
 					} else {
 						this.logger?.error(
-							"WorkerProxy: Worker initialization failed."
+							"WorkerVectorizerProxy: Worker initialization failed."
 						);
 						reject(new Error("Worker initialization failed."));
 					}
 				} else if (data.type === "error" && !this.isWorkerInitialized) {
 					// 初期化中のエラー
 					this.logger?.error(
-						"WorkerProxy: Received error during initialization:",
+						"WorkerVectorizerProxy: Received error during initialization:",
 						data.payload
 					);
 					reject(
@@ -86,18 +86,21 @@ export class WorkerProxyVectorizer implements IVectorizer {
 			} else if (type === "progress") {
 			} else if (type === "initialized") {
 				this.logger?.verbose_log(
-					`WorkerProxy: Received initialization status: ${payload}`
+					`WorkerVectorizerProxy: Received initialization status: ${payload}`
 				);
 			} else {
 				this.logger?.warn(
-					"WorkerProxy: Received unknown message type from worker:",
+					"WorkerVectorizerProxy: Received unknown message type from worker:",
 					type
 				);
 			}
 		};
 
 		this.worker.onerror = (error: ErrorEvent) => {
-			this.logger?.error("WorkerProxy: Uncaught error in worker:", error);
+			this.logger?.error(
+				"WorkerVectorizerProxy: Uncaught error in worker:",
+				error
+			);
 			new Notice(
 				"A critical error occurred in the vectorizer worker. Check console."
 			);
@@ -110,25 +113,24 @@ export class WorkerProxyVectorizer implements IVectorizer {
 				);
 			});
 			this.requestPromises.clear();
-			this.isWorkerInitialized = false; // Worker が利用不可になったことを示す
+			this.isWorkerInitialized = false;
 		};
 	}
 
-	// Worker の初期化が完了するのを待つ
 	async ensureInitialized(): Promise<void> {
 		if (!this.isWorkerInitialized) {
 			this.logger?.verbose_log(
-				"WorkerProxy: Waiting for worker initialization..."
+				"WorkerVectorizerProxy: Waiting for worker initialization..."
 			);
 			await this.initializationPromise;
 		}
 	}
 
 	async vectorizeSentences(sentences: string[]): Promise<number[][]> {
-		await this.ensureInitialized(); // Worker の準備ができるまで待つ
+		await this.ensureInitialized();
 
 		return new Promise((resolve, reject) => {
-			const id = crypto.randomUUID(); // 一意なリクエストIDを生成
+			const id = crypto.randomUUID();
 			this.requestPromises.set(id, { resolve, reject });
 
 			const request: WorkerRequest = {
@@ -138,19 +140,21 @@ export class WorkerProxyVectorizer implements IVectorizer {
 			};
 			this.worker.postMessage(request);
 
-			// タイムアウト処理 (オプション)
+			// タイムアウト処理
 			setTimeout(() => {
 				if (this.requestPromises.has(id)) {
 					this.requestPromises.delete(id);
 					reject(new Error(`Request ${id} timed out.`));
 				}
-			}, 60000); // 例: 60秒
+			}, 60000); // 一旦60秒
 		});
 	}
 
 	// プラグインアンロード時に Worker を終了
 	terminate(): void {
-		this.logger?.verbose_log("WorkerProxy: Terminating worker...");
+		this.logger?.verbose_log(
+			"WorkerVectorizerProxy: Terminating worker..."
+		);
 		this.worker.terminate();
 		this.isWorkerInitialized = false;
 		// 保留中の Promise を reject

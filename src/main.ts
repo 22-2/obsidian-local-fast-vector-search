@@ -43,13 +43,13 @@ export default class MyVectorPlugin extends Plugin {
 	logger: LoggerService | null = null; // 型を修正し、初期値をnullに設定
 
 	async onload() {
-		this.logger = new LoggerService();
-		this.logger.updateSettings(this.settings); // LoggerServiceの初期設定を反映
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
 			await this.loadData()
 		);
+		this.logger = new LoggerService();
+		this.logger.updateSettings(this.settings);
 
 		this.addSettingTab(new VectorizerSettingTab(this.app, this));
 
@@ -242,8 +242,8 @@ export default class MyVectorPlugin extends Plugin {
 				this.vectorStore = new PGliteVectorStore(
 					this.pgProvider,
 					EMBEDDING_DIMENSION,
-					undefined, // tableName はデフォルト値を使用
-					this.logger // loggerを渡す
+					undefined,
+					this.logger
 				);
 				const tableInfo = await this.vectorStore.checkTableExists();
 				if (
