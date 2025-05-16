@@ -255,9 +255,10 @@ export class PGliteVectorStore {
 			await pgClient.query(`SET hnsw.ef_search = ${efSearch}`);
 
 			const result = await pgClient.query<SimilarityResultItem>(
-				`SELECT id, file_path, chunk_offset_start, chunk_offset_end, chunk, 1 - (embedding <#> $1) as distance
+				`SELECT id, file_path, chunk_offset_start, chunk_offset_end, chunk,
+				 embedding <-> $1 as distance
 				 FROM ${quotedTableName}
-				 ORDER BY distance DESC
+				 ORDER BY distance ASC
 				 LIMIT $2`,
 				[JSON.stringify(vector), limit]
 			);
