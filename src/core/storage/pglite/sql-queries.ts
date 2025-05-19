@@ -30,8 +30,8 @@ export const SQL_QUERIES = {
 		CREATE INDEX IF NOT EXISTS $1
 		ON $2 USING hnsw (embedding halfvec_cosine_ops)
 		WITH (
-			m = 10,
-			ef_construction = 20
+			m = 8,
+			ef_construction = 64
 		)
 	`,
 };

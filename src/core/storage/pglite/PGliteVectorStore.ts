@@ -249,7 +249,7 @@ export class PGliteVectorStore {
 	): Promise<SimilarityResultItem[]> {
 		const pgClient = this.getClient();
 		const quotedTableName = this.quoteIdentifier(this.tableName);
-		const efSearch = options?.efSearch || 40;
+		const efSearch = options?.efSearch || 280;
 
 		try {
 			await pgClient.query(`SET hnsw.ef_search = ${efSearch}`);
