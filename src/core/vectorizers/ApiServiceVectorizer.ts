@@ -16,4 +16,9 @@ export class ApiServiceVectorizer implements IVectorizer {
 		// TODO: call external API
 		throw new Error("ApiServiceVectorizer is not implemented yet.");
 	}
+
+	testSimilarity(): void {
+		// TODO: call external API
+		throw new Error("ApiServiceVectorizer is not implemented yet.");
+	}
 }
