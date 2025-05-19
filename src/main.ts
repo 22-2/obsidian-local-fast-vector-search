@@ -10,6 +10,7 @@ import { SearchModal } from "./ui/modals/SearchModal";
 import {
 	DB_NAME,
 	EMBEDDINGS_TABLE_NAME,
+	EMBEDDINGS_DIMENSIONS,
 } from "./shared/constants/appConstants";
 import { TextChunker } from "./core/chunking/TextChunker";
 import { NotificationService } from "./shared/services/NotificationService";
@@ -17,8 +18,6 @@ import { VectorizationService } from "./core/services/VectorizationService";
 import { SearchService } from "./core/services/SearchService";
 import { StorageManagementService } from "./core/services/StorageManagementService";
 import { PGliteTableManager } from "./core/storage/pglite/PGliteTableManager";
-
-const EMBEDDING_DIMENSION = 384;
 
 import { PluginSettings, DEFAULT_SETTINGS } from "./pluginSettings";
 import { VectorizerSettingTab } from "./ui/settings";
@@ -264,7 +263,7 @@ export default class MyVectorPlugin extends Plugin {
 					true,
 					this.logger,
 					EMBEDDINGS_TABLE_NAME,
-					EMBEDDING_DIMENSION
+					EMBEDDINGS_DIMENSIONS
 				);
 				await this.pgProvider.initialize();
 				if (this.logger)
@@ -272,21 +271,21 @@ export default class MyVectorPlugin extends Plugin {
 
 				this.vectorStore = new PGliteVectorStore(
 					this.pgProvider,
-					EMBEDDING_DIMENSION,
+					EMBEDDINGS_DIMENSIONS,
 					undefined,
 					this.logger
 				);
 				const tableInfo = await this.vectorStore.checkTableExists();
 				if (
 					!tableInfo.exists ||
-					tableInfo.dimensions !== EMBEDDING_DIMENSION
+					tableInfo.dimensions !== EMBEDDINGS_DIMENSIONS
 				) {
 					if (
 						tableInfo.exists &&
-						tableInfo.dimensions !== EMBEDDING_DIMENSION
+						tableInfo.dimensions !== EMBEDDINGS_DIMENSIONS
 					) {
 						console.warn(
-							`Vector table dimensions mismatch. Expected ${EMBEDDING_DIMENSION}, got ${tableInfo.dimensions}. Recreating table.`
+							`Vector table dimensions mismatch. Expected ${EMBEDDINGS_DIMENSIONS}, got ${tableInfo.dimensions}. Recreating table.`
 						);
 						new Notice(
 							`Recreating vector table due to dimension mismatch. Existing vectors will be lost.`,

@@ -4,6 +4,7 @@ import type {
 	PreTrainedTokenizerType,
 	TensorType,
 } from "../../shared/types/huggingface";
+import { EMBEDDINGS_DIMENSIONS } from "src/shared/constants/appConstants";
 
 // @ts-ignore global self for Worker
 const worker = self as DedicatedWorkerGlobalScope;
@@ -41,7 +42,6 @@ let tokenizer: PreTrainedTokenizerType | null = null;
 let Tensor: typeof import("@huggingface/transformers").Tensor | null = null;
 let isInitialized = false;
 let isInitializing = false;
-const VECTOR_DIMENSION = 384; // ベクトルの次元数
 
 async function initializeEmbeddingModel() {
 	if (isInitialized || isInitializing) return;
@@ -148,8 +148,8 @@ async function vectorize(sentences: string[]): Promise<number[][]> {
 		let resultVectors = (embeddingTensor.tolist() as number[][]).map(
 			(vec) => {
 				// ベクトルを適切なサイズに切り詰める
-				if (vec.length > VECTOR_DIMENSION) {
-					vec = vec.slice(0, VECTOR_DIMENSION);
+				if (vec.length > EMBEDDINGS_DIMENSIONS) {
+					vec = vec.slice(0, EMBEDDINGS_DIMENSIONS);
 				}
 				const magnitude = Math.sqrt(
 					vec.reduce((sum, val) => sum + val * val, 0)
