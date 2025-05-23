@@ -498,6 +498,22 @@ export default class MyVectorPlugin extends Plugin {
 			/^huggingface-hub$/i,
 		];
 		let clearedSomething = false;
+
+		if (this.proxy) {
+			try {
+				this.logger?.verbose_log(
+					"Closing PGlite DB via worker proxy..."
+				);
+				await this.proxy.closeDatabase();
+				this.logger?.verbose_log("PGlite DB closed via worker proxy.");
+			} catch (error) {
+				this.logger?.error(
+					"Error closing PGlite DB via worker proxy:",
+					error
+				);
+			}
+		}
+
 		const pgliteResourceCacheName = "pglite-resources-cache";
 
 		try {

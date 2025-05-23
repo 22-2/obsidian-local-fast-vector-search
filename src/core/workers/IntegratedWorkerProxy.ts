@@ -229,7 +229,7 @@ export class IntegratedWorkerProxy {
 		});
 	}
 
-	async closeDb(): Promise<boolean> {
+	async closeDatabase(): Promise<boolean> {
 		return this.sendRequest({
 			type: "closeDb",
 		});

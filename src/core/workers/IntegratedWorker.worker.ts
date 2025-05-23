@@ -1,14 +1,62 @@
+function nmtNormalize(text: string): string {
+	let normalizedText = text;
+
+	// 1. Filter (remove) specific control characters.
+	// These correspond to:
+	// 0x0001..=0x0008  (\u{1}-\u{8})
+	// 0x000B           (\u{B})
+	// 0x000E..=0x001F  (\u{E}-\u{1F})
+	// 0x007F           (\u{7F})
+	// 0x008F           (\u{8F})
+	// 0x009F           (\u{9F})
+	const controlCharsRegex =
+		/[\u{1}-\u{8}\u{B}\u{E}-\u{1F}\u{7F}\u{8F}\u{9F}]/gu;
+	normalizedText = normalizedText.replace(controlCharsRegex, "");
+
+	// 2. Map other specific code points to a single space ' '.
+	// These correspond to:
+	// 0x0009 (TAB)
+	// 0x000A (LF)
+	// 0x000C (FF)
+	// 0x000D (CR)
+	// 0x1680 (OGHAM SPACE MARK)
+	// 0x200B..=0x200F (ZERO WIDTH SPACE, ZWNJ, ZWJ, LRM, RLM)
+	// 0x2028 (LINE SEPARATOR)
+	// 0x2029 (PARAGRAPH SEPARATOR)
+	// 0x2581 (LOWER ONE EIGHTH BLOCK)
+	// 0xFEFF (ZERO WIDTH NO-BREAK SPACE / BOM)
+	// 0xFFFD (REPLACEMENT CHARACTER)
+	const mapToSpaceRegex =
+		/[\u{0009}\u{000A}\u{000C}\u{000D}\u{1680}\u{200B}-\u{200F}\u{2028}\u{2029}\u{2581}\u{FEFF}\u{FFFD}]/gu;
+	normalizedText = normalizedText.replace(mapToSpaceRegex, " ");
+
+	return normalizedText;
+}
 import { matmul } from "@huggingface/transformers";
 import type {
 	PreTrainedModelType,
 	PreTrainedTokenizerType,
 	TensorType,
 } from "../../shared/types/huggingface";
-import { EMBEDDINGS_DIMENSIONS } from "../../shared/constants/appConstants";
+import {
+	EMBEDDINGS_DIMENSIONS,
+	DB_NAME,
+} from "../../shared/constants/appConstants";
 import {
 	WorkerRequest,
 	WorkerResponse,
 } from "../../shared/types/integrated-worker";
+
+// PGlite関連のインポート
+import { PGlite } from "@electric-sql/pglite";
+import { IdbFs } from "@electric-sql/pglite";
+import { IDBPDatabase, openDB } from "idb";
+import { SQL_QUERIES } from "../storage/pglite/sql-queries";
+
+// PGlite関連の定数
+const PGLITE_VERSION = "0.2.14";
+const IDB_NAME_RESOURCES = "pglite-resources-cache";
+const IDB_STORE_NAME_RESOURCES = "resources";
 
 // @ts-ignore global self for Worker
 const worker = self as DedicatedWorkerGlobalScope;
@@ -43,10 +91,123 @@ function postLogMessage(
 let model: PreTrainedModelType | null = null;
 let tokenizer: PreTrainedTokenizerType | null = null;
 let Tensor: typeof import("@huggingface/transformers").Tensor | null = null;
+let pgliteInstance: PGlite | null = null;
+let vectorExtensionBundleURL: URL | null = null;
 let isInitialized = false;
 let isInitializing = false;
+let isDbInitialized = false;
 
-// 初期化関数（スケルトン）
+async function getPGliteResources(): Promise<{
+	fsBundle: Blob;
+	wasmModule: WebAssembly.Module;
+	vectorExtensionBundlePath: URL;
+}> {
+	const resourceCacheKeys = {
+		fsBundle: `pglite-${PGLITE_VERSION}-postgres.data`,
+		wasmModule: `pglite-${PGLITE_VERSION}-postgres.wasm`,
+		vectorExtensionBundle: `pglite-${PGLITE_VERSION}-vector.tar.gz`,
+	};
+
+	const resources = {
+		fsBundle: {
+			url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.data`,
+			key: resourceCacheKeys.fsBundle,
+			type: "application/octet-stream",
+			process: async (buffer: ArrayBuffer) =>
+				new Blob([buffer], { type: "application/octet-stream" }),
+		},
+		wasmModule: {
+			url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/postgres.wasm`,
+			key: resourceCacheKeys.wasmModule,
+			type: "application/wasm",
+			process: async (buffer: ArrayBuffer) => {
+				const wasmBytes = new Uint8Array(buffer);
+				if (!WebAssembly.validate(wasmBytes)) {
+					throw new Error("Invalid WebAssembly module data.");
+				}
+				return WebAssembly.compile(wasmBytes);
+			},
+		},
+		vectorExtensionBundle: {
+			url: `https://unpkg.com/@electric-sql/pglite@${PGLITE_VERSION}/dist/vector.tar.gz`,
+			key: resourceCacheKeys.vectorExtensionBundle,
+			type: "application/gzip",
+			process: async (buffer: ArrayBuffer) => {
+				const blob = new Blob([buffer], { type: "application/gzip" });
+				return new URL(URL.createObjectURL(blob));
+			},
+		},
+	};
+
+	const loadedResources: any = {};
+	let db: IDBPDatabase | undefined;
+
+	try {
+		db = await openDB(IDB_NAME_RESOURCES, 1, {
+			upgrade(db) {
+				if (!db.objectStoreNames.contains(IDB_STORE_NAME_RESOURCES)) {
+					db.createObjectStore(IDB_STORE_NAME_RESOURCES);
+				}
+			},
+		});
+
+		for (const [resourceName, resourceInfo] of Object.entries(resources)) {
+			postLogMessage(
+				"info",
+				`Loading PGlite resource: ${resourceName}...`
+			);
+			let cachedData: ArrayBuffer | undefined = await db.get(
+				IDB_STORE_NAME_RESOURCES,
+				resourceInfo.key
+			);
+
+			if (cachedData) {
+				postLogMessage("verbose", `${resourceName} found in cache.`);
+			} else {
+				postLogMessage(
+					"info",
+					`${resourceName} not in cache, downloading...`
+				);
+				const response = await fetch(resourceInfo.url);
+				if (!response.ok) {
+					throw new Error(
+						`Failed to download ${resourceName}: Status ${response.status}`
+					);
+				}
+				cachedData = await response.arrayBuffer();
+				await db.put(
+					IDB_STORE_NAME_RESOURCES,
+					cachedData,
+					resourceInfo.key
+				);
+				postLogMessage(
+					"verbose",
+					`${resourceName} downloaded and cached.`
+				);
+			}
+			loadedResources[resourceName] = await resourceInfo.process(
+				cachedData
+			);
+		}
+	} catch (error) {
+		postLogMessage("error", "Error loading PGlite resources:", error);
+		throw error;
+	} finally {
+		if (db) db.close();
+	}
+
+	return {
+		fsBundle: loadedResources.fsBundle,
+		wasmModule: loadedResources.wasmModule,
+		vectorExtensionBundlePath: loadedResources.vectorExtensionBundle,
+	};
+}
+
+function quoteIdentifier(identifier: string): string {
+	return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+// 初期化関数
 async function initialize(): Promise<boolean> {
 	if (isInitialized || isInitializing) {
 		postLogMessage(
@@ -104,10 +265,59 @@ async function initialize(): Promise<boolean> {
 			).toFixed(2)} seconds.`
 		);
 
+		// PGliteの初期化ロジック
+		postLogMessage("info", "Initializing PGlite...");
+		const resources = await getPGliteResources();
+		vectorExtensionBundleURL = resources.vectorExtensionBundlePath;
+
+		const dbPath = `idb://${DB_NAME}`;
+		postLogMessage("info", `Creating PGlite instance for ${dbPath}`);
+
+		pgliteInstance = (await PGlite.create(dbPath, {
+			relaxedDurability: true,
+			fsBundle: resources.fsBundle,
+			fs: new IdbFs(DB_NAME),
+			wasmModule: resources.wasmModule,
+			extensions: {
+				vector: resources.vectorExtensionBundlePath,
+			},
+		})) as PGlite;
+		postLogMessage("info", "PGlite instance created.");
+
+		// スキーマ設定ロジック
+		const tableName = "vectors";
+		const dimensions = EMBEDDINGS_DIMENSIONS;
+
+		await pgliteInstance.exec(SQL_QUERIES.SET_ENVIRONMENT);
+		postLogMessage("info", "Database environment set.");
+
+		await pgliteInstance.exec(SQL_QUERIES.CREATE_EXTENSION);
+		postLogMessage("info", "Vector extension ensured.");
+
+		const createTableSql = SQL_QUERIES.CREATE_TABLE.replace(
+			"$1",
+			quoteIdentifier(tableName)
+		).replace("$2", dimensions.toString());
+		await pgliteInstance.exec(createTableSql);
+		postLogMessage("info", `Table ${tableName} ensured.`);
+
+		const indexName = `${tableName}_hnsw_idx`;
+		const createIndexSql = SQL_QUERIES.CREATE_HNSW_INDEX.replace(
+			"$1",
+			quoteIdentifier(indexName)
+		).replace("$2", quoteIdentifier(tableName));
+		await pgliteInstance.exec(createIndexSql);
+		postLogMessage(
+			"info",
+			`Index ${indexName} for table ${tableName} ensured.`
+		);
+
+		isDbInitialized = true;
+
 		isInitialized = true;
 		postLogMessage(
 			"info",
-			"IntegratedWorker initialization completed. Model ready."
+			"IntegratedWorker initialization completed. Model and DB ready."
 		);
 
 		(self as any).process = originalProcess; // 元の process を復元
@@ -118,9 +328,28 @@ async function initialize(): Promise<boolean> {
 			"IntegratedWorker initialization failed:",
 			error
 		);
+		if (vectorExtensionBundleURL) {
+			URL.revokeObjectURL(vectorExtensionBundleURL.href);
+			postLogMessage("info", "Revoked Blob URL for vector extension.");
+		}
 		return false;
 	} finally {
 		isInitializing = false;
+	}
+}
+
+async function closeDatabase(): Promise<void> {
+	if (pgliteInstance) {
+		postLogMessage("info", "Closing PGlite database...");
+		await pgliteInstance.close();
+		pgliteInstance = null;
+		isDbInitialized = false;
+		postLogMessage("info", "PGlite database closed.");
+	}
+	if (vectorExtensionBundleURL) {
+		URL.revokeObjectURL(vectorExtensionBundleURL.href);
+		vectorExtensionBundleURL = null;
+		postLogMessage("info", "Revoked Blob URL for vector extension.");
 	}
 }
 
@@ -349,16 +578,7 @@ worker.onmessage = async (event: MessageEvent) => {
 				break;
 
 			case "closeDb":
-				if (!isInitialized) {
-					throw new Error(
-						"Worker not initialized. Call initialize first."
-					);
-				}
-				// TODO: 実装
-				postLogMessage(
-					"info",
-					"closeDb request received (not yet implemented)"
-				);
+				await closeDatabase();
 				postMessage({
 					id,
 					type: "dbClosed",
@@ -383,38 +603,3 @@ worker.onmessage = async (event: MessageEvent) => {
 		} as WorkerResponse);
 	}
 };
-
-function nmtNormalize(text: string): string {
-	let normalizedText = text;
-
-	// 1. Filter (remove) specific control characters.
-	// These correspond to:
-	// 0x0001..=0x0008  (\u{1}-\u{8})
-	// 0x000B           (\u{B})
-	// 0x000E..=0x001F  (\u{E}-\u{1F})
-	// 0x007F           (\u{7F})
-	// 0x008F           (\u{8F})
-	// 0x009F           (\u{9F})
-	const controlCharsRegex =
-		/[\u{1}-\u{8}\u{B}\u{E}-\u{1F}\u{7F}\u{8F}\u{9F}]/gu;
-	normalizedText = normalizedText.replace(controlCharsRegex, "");
-
-	// 2. Map other specific code points to a single space ' '.
-	// These correspond to:
-	// 0x0009 (TAB)
-	// 0x000A (LF)
-	// 0x000C (FF)
-	// 0x000D (CR)
-	// 0x1680 (OGHAM SPACE MARK)
-	// 0x200B..=0x200F (ZERO WIDTH SPACE, ZWNJ, ZWJ, LRM, RLM)
-	// 0x2028 (LINE SEPARATOR)
-	// 0x2029 (PARAGRAPH SEPARATOR)
-	// 0x2581 (LOWER ONE EIGHTH BLOCK)
-	// 0xFEFF (ZERO WIDTH NO-BREAK SPACE / BOM)
-	// 0xFFFD (REPLACEMENT CHARACTER)
-	const mapToSpaceRegex =
-		/[\u{0009}\u{000A}\u{000C}\u{000D}\u{1680}\u{200B}-\u{200F}\u{2028}\u{2029}\u{2581}\u{FEFF}\u{FFFD}]/gu;
-	normalizedText = normalizedText.replace(mapToSpaceRegex, " ");
-
-	return normalizedText;
-}
