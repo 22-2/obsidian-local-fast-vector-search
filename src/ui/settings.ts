@@ -42,7 +42,10 @@ export class VectorizerSettingTab extends PluginSettingTab {
 					.setButtonText("Discard DB")
 					.setCta()
 					.onClick(() => {
-						new DiscardDBModal(this.app, this.plugin).open();
+						new DiscardDBModal(this.app, async () => {
+							await this.plugin.clearResources(true);
+							new Notice("Database discarded.");
+						}).open();
 					})
 			);
 		// Setting for Deleting Resources
@@ -56,7 +59,10 @@ export class VectorizerSettingTab extends PluginSettingTab {
 					.setButtonText("Delete Resources")
 					.setCta()
 					.onClick(() => {
-						new DeleteResourcesModal(this.app, this.plugin).open();
+						new DeleteResourcesModal(this.app, async () => {
+							await this.plugin.clearResources(false);
+							new Notice("All resources deleted.");
+						}).open();
 					})
 			);
 
