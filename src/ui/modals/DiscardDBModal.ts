@@ -1,12 +1,11 @@
 import { App, Modal, Setting, Notice } from "obsidian";
-import MyVectorPlugin from "../../main";
 
 export class DiscardDBModal extends Modal {
-	plugin: MyVectorPlugin;
+	private onConfirm: () => Promise<void>;
 
-	constructor(app: App, plugin: MyVectorPlugin) {
+	constructor(app: App, onConfirm: () => Promise<void>) {
 		super(app);
-		this.plugin = plugin;
+		this.onConfirm = onConfirm;
 	}
 
 	onOpen() {
@@ -23,14 +22,8 @@ export class DiscardDBModal extends Modal {
 					.setCta()
 					.onClick(async () => {
 						try {
-							if (this.plugin.pgProvider) {
-								await this.plugin.pgProvider.discardDB();
-								new Notice("Database discarded successfully.");
-							} else {
-								new Notice(
-									"Database provider not initialized."
-								);
-							}
+							await this.onConfirm();
+							new Notice("Database discarded successfully.");
 						} catch (error: any) {
 							console.error("Failed to discard database:", error);
 							new Notice(

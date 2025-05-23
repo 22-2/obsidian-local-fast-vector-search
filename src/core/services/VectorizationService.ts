@@ -1,53 +1,18 @@
 import { App, TFile } from "obsidian";
-import type { IVectorizer } from "../vectorizers/IVectorizer";
 import { TextChunker } from "../../core/chunking/TextChunker";
-import type { PGliteVectorStore } from "../storage/pglite/PGliteVectorStore";
-import type { VectorItem } from "../storage/types";
 import { LoggerService } from "../../shared/services/LoggerService";
+import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
+import { ChunkInfo } from "../storage/types";
 
 export class VectorizationService {
 	private logger: LoggerService | null;
 	constructor(
 		private app: App,
-		private vectorizer: IVectorizer,
-		private vectorStore: PGliteVectorStore,
+		private workerProxy: IntegratedWorkerProxy, // IVectorizer と PGliteVectorStore の代わりに workerProxy を使用
 		private textChunker: TextChunker,
 		logger: LoggerService | null
 	) {
 		this.logger = logger;
-	}
-
-	private async generateVectorItemsFromFileContent(
-		filePath: string,
-		content: string
-	): Promise<VectorItem[]> {
-		const chunkInfos = this.textChunker.chunkText(content);
-		if (chunkInfos.length === 0) return [];
-
-		const sentences = chunkInfos.map((chunk) => chunk.chunk);
-		const vectors = await this.vectorizer.vectorizeSentences(sentences);
-
-		return chunkInfos
-			.map((chunkInfo, i) => {
-				if (vectors[i]) {
-					return {
-						filePath: filePath,
-						chunkOffsetStart: chunkInfo.metadata.startPosition,
-						chunkOffsetEnd: chunkInfo.metadata.endPosition,
-						vector: vectors[i],
-					};
-				}
-				return null;
-			})
-			.filter((item): item is VectorItem => item !== null);
-	}
-
-	private async saveVectorItemsToStore(
-		itemsToInsert: VectorItem[]
-	): Promise<number> {
-		if (itemsToInsert.length === 0) return 0;
-		await this.vectorStore.upsertVectors(itemsToInsert);
-		return itemsToInsert.length;
 	}
 
 	public async vectorizeAllNotes(
@@ -55,7 +20,7 @@ export class VectorizationService {
 	): Promise<{ totalVectorsProcessed: number }> {
 		const files = this.app.vault.getMarkdownFiles();
 		let totalVectorsProcessed = 0;
-		const allItemsToInsert: VectorItem[] = [];
+		const allChunksToProcess: ChunkInfo[] = [];
 
 		if (onProgress)
 			onProgress("Starting vectorization for all notes...", true);
@@ -80,12 +45,25 @@ export class VectorizationService {
 						onProgress(`${noticeMessage} (skipped empty)`, false);
 					continue;
 				}
-				const itemsFromFile =
-					await this.generateVectorItemsFromFileContent(
-						file.path,
-						content
+				const chunkInfos = this.textChunker.chunkText(content);
+				if (chunkInfos.length === 0) {
+					this.logger?.verbose_log(
+						`No chunks generated for file: ${file.path}`
 					);
-				allItemsToInsert.push(...itemsFromFile);
+					if (onProgress)
+						onProgress(`${noticeMessage} (no chunks)`, false);
+					continue;
+				}
+
+				const chunksWithFilePath: ChunkInfo[] = chunkInfos.map(
+					(chunk) => ({
+						filePath: file.path,
+						chunkOffsetStart: chunk.metadata.startPosition,
+						chunkOffsetEnd: chunk.metadata.endPosition,
+						text: chunk.chunk,
+					})
+				);
+				allChunksToProcess.push(...chunksWithFilePath);
 				if (onProgress) onProgress(noticeMessage, false);
 			} catch (fileError) {
 				this.logger?.error(
@@ -101,15 +79,16 @@ export class VectorizationService {
 			}
 		}
 
-		if (allItemsToInsert.length > 0) {
+		if (allChunksToProcess.length > 0) {
 			if (onProgress)
 				onProgress(
-					`Saving ${allItemsToInsert.length} total vectors from all notes...`,
+					`Vectorizing and storing ${allChunksToProcess.length} chunks...`,
 					true
 				);
-			totalVectorsProcessed = await this.saveVectorItemsToStore(
-				allItemsToInsert
+			const result = await this.workerProxy.vectorizeAndStoreChunks(
+				allChunksToProcess
 			);
+			totalVectorsProcessed = result.count;
 			this.logger?.verbose_log(
 				`Upserted ${totalVectorsProcessed} vectors in batch.`
 			);

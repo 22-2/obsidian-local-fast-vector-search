@@ -2,8 +2,12 @@ import { LoggerService } from "../../shared/services/LoggerService";
 import {
 	WorkerRequest,
 	WorkerResponse,
+	VectorizeAndStoreResponse,
+	SearchResult,
+	RebuildDbResponse,
 } from "../../shared/types/integrated-worker";
 import IntegratedWorkerCode from "./IntegratedWorker.worker?worker";
+import { ChunkInfo, SearchOptions } from "../../core/storage/types";
 
 export class IntegratedWorkerProxy {
 	private worker: Worker;
@@ -40,7 +44,10 @@ export class IntegratedWorkerProxy {
 						);
 						reject(new Error("Worker initialization failed."));
 					}
-				} else if (data.type === "error" && !this.isWorkerInitialized) {
+				} else if (
+					data.type === "errorResponse" &&
+					!this.isWorkerInitialized
+				) {
 					// 初期化中のエラー
 					this.worker.removeEventListener(
 						"message",
@@ -74,7 +81,7 @@ export class IntegratedWorkerProxy {
 			// 対応するプロミスを探して解決
 			const promise = this.requestPromises.get(id);
 			if (promise) {
-				if (type === "error") {
+				if (type === "errorResponse") {
 					promise.reject(new Error(`Worker error: ${payload}`));
 				} else {
 					promise.resolve(payload);
@@ -196,30 +203,29 @@ export class IntegratedWorkerProxy {
 		});
 	}
 
-	async search(
-		query: string,
-		limit?: number,
-		threshold?: number
-	): Promise<{
-		results: Array<{
-			id: string;
-			content: string;
-			score: number;
-			metadata?: Record<string, any>;
-		}>;
-	}> {
+	async vectorizeAndStoreChunks(
+		chunks: ChunkInfo[]
+	): Promise<VectorizeAndStoreResponse["payload"]> {
 		return this.sendRequest({
-			type: "search",
-			payload: { query, limit, threshold },
+			type: "vectorizeAndStore",
+			payload: { chunks },
 		});
 	}
 
-	async rebuildDb(
-		clearExisting?: boolean
-	): Promise<{ success: boolean; message: string }> {
+	async searchSimilar(
+		query: string,
+		limit?: number,
+		options?: SearchOptions
+	): Promise<SearchResult["payload"]> {
+		return this.sendRequest({
+			type: "search",
+			payload: { query, limit, options },
+		});
+	}
+
+	async rebuildDatabase(): Promise<RebuildDbResponse["payload"]> {
 		return this.sendRequest({
 			type: "rebuildDb",
-			payload: { clearExisting },
 		});
 	}
 

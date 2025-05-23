@@ -1,25 +1,17 @@
 import { Plugin, Notice, App } from "obsidian";
 import { LoggerService } from "./shared/services/LoggerService";
-import { IVectorizer } from "./core/vectorizers/IVectorizer";
-import { createTransformersVectorizer } from "./core/vectorizers/VectorizerFactory";
 import { CommandHandler } from "./commands";
-import { WorkerProxyVectorizer } from "./core/vectorizers/WorkerVectorizerProxy";
-import { PGliteProvider } from "./core/storage/pglite/PGliteProvider";
-import { PGliteVectorStore } from "./core/storage/pglite/PGliteVectorStore";
-import { SearchModal } from "./ui/modals/SearchModal";
 import { deleteDB } from "idb";
-import {
-	DB_NAME,
-	EMBEDDINGS_TABLE_NAME,
-	EMBEDDINGS_DIMENSIONS,
-} from "./shared/constants/appConstants";
+import { DB_NAME } from "./shared/constants/appConstants";
 import { TextChunker } from "./core/chunking/TextChunker";
 import { NotificationService } from "./shared/services/NotificationService";
 import { VectorizationService } from "./core/services/VectorizationService";
 import { SearchService } from "./core/services/SearchService";
 import { StorageManagementService } from "./core/services/StorageManagementService";
-import { PGliteTableManager } from "./core/storage/pglite/PGliteTableManager";
 import { IntegratedWorkerProxy } from "./core/workers/IntegratedWorkerProxy";
+import { SearchModal } from "./ui/modals/SearchModal";
+import { DiscardDBModal } from "./ui/modals/DiscardDBModal";
+import { DeleteResourcesModal } from "./ui/modals/DeleteResourcesModal";
 
 import { PluginSettings, DEFAULT_SETTINGS } from "./pluginSettings";
 import { VectorizerSettingTab } from "./ui/settings";
@@ -27,13 +19,10 @@ import { VectorizerSettingTab } from "./ui/settings";
 export default class MyVectorPlugin extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	private initializationPromise: Promise<void> | null = null;
-	vectorizer: IVectorizer | null = null;
 	commandHandler: CommandHandler | null = null;
-	private isWorkerReady = false;
 
-	pgProvider: PGliteProvider | null = null;
-	vectorStore: PGliteVectorStore | null = null;
-	private isDbReady = false;
+	// 新しい統合ワーカープロキシ
+	proxy: IntegratedWorkerProxy | null = null;
 
 	// Service instances
 	vectorizationService: VectorizationService | null = null;
@@ -43,8 +32,6 @@ export default class MyVectorPlugin extends Plugin {
 	textChunker: TextChunker | null = null;
 	logger: LoggerService | null = null; // 型を修正し、初期値をnullに設定
 
-	// 新しい統合ワーカープロキシ
-	proxy: IntegratedWorkerProxy | null = null;
 	async onload() {
 		this.settings = Object.assign(
 			{},
@@ -73,8 +60,6 @@ export default class MyVectorPlugin extends Plugin {
 					new Notice(
 						"Failed to initialize resources. Check console."
 					);
-					this.isWorkerReady = false;
-					this.isDbReady = false;
 				}
 			);
 		});
@@ -179,33 +164,45 @@ export default class MyVectorPlugin extends Plugin {
 					);
 					return;
 				}
-				if (!this.commandHandler) {
-					new Notice(
-						"Command handler not ready for test. Please try reloading the plugin."
-					);
-					return;
-				}
-
 				if (!this.proxy) {
 					new Notice("IntegratedWorkerProxy not ready for test.");
 					return;
 				}
-				await this.proxy.testSimilarity();
+				const testResult = await this.proxy.testSimilarity();
+				new Notice(testResult, 5000);
+			},
+		});
+
+		this.addCommand({
+			id: "discard-db",
+			name: "Discard database",
+			callback: async () => {
+				new DiscardDBModal(this.app, async () => {
+					await this.clearResources(true);
+					new Notice("Database discarded.");
+				}).open();
+			},
+		});
+
+		this.addCommand({
+			id: "delete-resources",
+			name: "Delete all resources (model cache, DB, etc.)",
+			callback: async () => {
+				new DeleteResourcesModal(this.app, async () => {
+					await this.clearResources(false);
+					new Notice("All resources deleted.");
+				}).open();
 			},
 		});
 	}
 
 	async ensureResourcesInitialized(): Promise<void> {
 		if (
-			this.isWorkerReady &&
-			this.isDbReady &&
-			this.vectorizer &&
-			this.vectorStore &&
-			this.textChunker &&
 			this.vectorizationService &&
 			this.searchService &&
 			this.storageManagementService &&
-			this.commandHandler
+			this.commandHandler &&
+			this.proxy
 		) {
 			return;
 		}
@@ -223,14 +220,26 @@ export default class MyVectorPlugin extends Plugin {
 				"Waiting for resource initialization to complete..."
 			);
 		await this.initializationPromise;
-		if (!this.isWorkerReady || !this.isDbReady) {
+		if (
+			!this.vectorizationService ||
+			!this.searchService ||
+			!this.storageManagementService ||
+			!this.commandHandler ||
+			!this.proxy
+		) {
 			throw new Error("Resources failed to initialize.");
 		}
 		if (this.logger)
 			this.logger.verbose_log("Resource initialization confirmed.");
 	}
 	async initializeResources(): Promise<void> {
-		if (this.isWorkerReady && this.isDbReady) {
+		if (
+			this.vectorizationService &&
+			this.searchService &&
+			this.storageManagementService &&
+			this.commandHandler &&
+			this.proxy
+		) {
 			if (this.logger)
 				this.logger.verbose_log("Resources already initialized.");
 			return;
@@ -238,7 +247,7 @@ export default class MyVectorPlugin extends Plugin {
 
 		if (this.logger)
 			this.logger.verbose_log(
-				"Initializing resources (Vectorizer, Database, Command Handler)..."
+				"Initializing resources (Integrated Worker, Services, Command Handler)..."
 			);
 		const initNotice = new Notice("Initializing resources...", 0);
 
@@ -251,135 +260,54 @@ export default class MyVectorPlugin extends Plugin {
 					this.logger.verbose_log(
 						"IntegratedWorkerProxy initialized."
 					);
+			} else {
+				throw new Error("IntegratedWorkerProxy is not initialized.");
 			}
 
-			// 1. Vectorizer (Worker) の初期化
-			if (!this.isWorkerReady) {
-				initNotice.setMessage("Initializing vectorizer worker...");
-				this.vectorizer = createTransformersVectorizer(this.logger); // loggerを渡す
-				if (this.vectorizer instanceof WorkerProxyVectorizer) {
-					if (this.logger)
-						this.logger.verbose_log(
-							"Waiting for WorkerProxyVectorizer initialization..."
-						);
-					await this.vectorizer.ensureInitialized();
-					this.isWorkerReady = true;
-					if (this.logger)
-						this.logger.verbose_log("Vectorizer Worker is ready.");
-				} else {
-					this.isWorkerReady = true;
-				}
-			}
-
-			// 2. PGliteProvider と PGliteVectorStore の初期化
-			if (!this.isDbReady && this.isWorkerReady) {
-				initNotice.setMessage("Initializing database...");
-				this.pgProvider = new PGliteProvider(
-					DB_NAME,
-					true,
-					this.logger,
-					EMBEDDINGS_TABLE_NAME,
-					EMBEDDINGS_DIMENSIONS
-				);
-				await this.pgProvider.initialize();
-				if (this.logger)
-					this.logger.verbose_log("PGliteProvider initialized.");
-
-				this.vectorStore = new PGliteVectorStore(
-					this.pgProvider,
-					EMBEDDINGS_DIMENSIONS,
-					undefined,
-					this.logger
-				);
-				const tableInfo = await this.vectorStore.checkTableExists();
-				if (
-					!tableInfo.exists ||
-					tableInfo.dimensions !== EMBEDDINGS_DIMENSIONS
-				) {
-					if (
-						tableInfo.exists &&
-						tableInfo.dimensions !== EMBEDDINGS_DIMENSIONS
-					) {
-						console.warn(
-							`Vector table dimensions mismatch. Expected ${EMBEDDINGS_DIMENSIONS}, got ${tableInfo.dimensions}. Recreating table.`
-						);
-						new Notice(
-							`Recreating vector table due to dimension mismatch. Existing vectors will be lost.`,
-							5000
-						);
-					}
-					await this.vectorStore.createTable(true);
-				}
-				this.isDbReady = true;
-				if (this.logger)
-					this.logger.verbose_log(
-						"PGliteVectorStore initialized and table checked/created."
-					);
-			}
-
-			// 3. Initialize TextChunker
+			// 1. Initialize TextChunker
 			if (!this.textChunker) {
 				this.textChunker = new TextChunker({}); // Use default options or load from settings
 				if (this.logger)
 					this.logger.verbose_log("TextChunker initialized.");
 			}
 
-			// 4. Initialize Services (after vectorizer, vectorStore, textChunker are ready)
-			if (
-				this.isWorkerReady &&
-				this.isDbReady &&
-				this.vectorizer &&
-				this.vectorStore &&
-				this.textChunker
-			) {
-				if (!this.vectorizationService) {
-					this.vectorizationService = new VectorizationService(
-						this.app,
-						this.vectorizer,
-						this.vectorStore,
-						this.textChunker,
-						this.logger // loggerを渡す
+			// 2. Initialize Services (after workerProxy, textChunker are ready)
+			if (!this.vectorizationService) {
+				this.vectorizationService = new VectorizationService(
+					this.app,
+					this.proxy, // IntegratedWorkerProxy を渡す
+					this.textChunker,
+					this.logger
+				);
+				if (this.logger)
+					this.logger.verbose_log(
+						"VectorizationService initialized."
 					);
-					if (this.logger)
-						this.logger.verbose_log(
-							"VectorizationService initialized."
-						);
-				}
-				if (!this.searchService) {
-					this.searchService = new SearchService(
-						this.vectorizer,
-						this.vectorStore
+			}
+			if (!this.searchService) {
+				this.searchService = new SearchService(
+					this.proxy // IntegratedWorkerProxy を渡す
+				);
+				if (this.logger)
+					this.logger.verbose_log("SearchService initialized.");
+			}
+			if (!this.storageManagementService) {
+				this.storageManagementService = new StorageManagementService(
+					this.proxy, // IntegratedWorkerProxy を渡す
+					this.logger
+				);
+				if (this.logger)
+					this.logger.verbose_log(
+						"StorageManagementService initialized."
 					);
-					if (this.logger)
-						this.logger.verbose_log("SearchService initialized.");
-				}
-				if (!this.storageManagementService) {
-					this.storageManagementService =
-						new StorageManagementService(
-							this.pgProvider!,
-							new PGliteTableManager(
-								this.pgProvider!,
-								this.vectorStore!.getTableName(),
-								this.vectorStore!.getDimensions(),
-								this.logger // loggerを渡す
-							),
-							this.logger // loggerを渡す
-						);
-					if (this.logger)
-						this.logger.verbose_log(
-							"StorageManagementService initialized."
-						);
-				}
-				if (!this.notificationService) {
-					this.notificationService = new NotificationService();
-					if (this.logger)
-						this.logger.verbose_log(
-							"NotificationService initialized."
-						);
-				}
+			}
+			if (!this.notificationService) {
+				this.notificationService = new NotificationService();
+				if (this.logger)
+					this.logger.verbose_log("NotificationService initialized.");
 			}
 
-			// 5. CommandHandler の初期化 (after services are ready)
+			// 3. CommandHandler の初期化 (after services are ready)
 			if (
 				this.vectorizationService &&
 				this.searchService &&
@@ -399,13 +327,12 @@ export default class MyVectorPlugin extends Plugin {
 			}
 
 			if (
-				!this.isWorkerReady ||
-				!this.isDbReady ||
 				!this.textChunker ||
 				!this.vectorizationService ||
 				!this.searchService ||
 				!this.storageManagementService ||
-				!this.commandHandler
+				!this.commandHandler ||
+				!this.proxy
 			) {
 				throw new Error(
 					"Not all resources were ready after initialization attempt."
@@ -420,16 +347,12 @@ export default class MyVectorPlugin extends Plugin {
 				`Resource initialization failed: ${error.message}`
 			);
 			setTimeout(() => initNotice.hide(), 5000);
-			this.isWorkerReady = false;
-			this.isDbReady = false;
-			this.vectorizer = null;
-			this.pgProvider = null;
-			this.vectorStore = null;
 			this.commandHandler = null;
 			this.textChunker = null;
 			this.vectorizationService = null;
 			this.searchService = null;
 			this.storageManagementService = null;
+			this.initializationPromise = null;
 			throw error;
 		} finally {
 			if (this.logger)
@@ -448,34 +371,13 @@ export default class MyVectorPlugin extends Plugin {
 			this.proxy.terminate();
 		}
 
-		if (this.vectorizer instanceof WorkerProxyVectorizer) {
-			if (this.logger)
-				this.logger.verbose_log("Terminating vectorizer worker...");
-			this.vectorizer.terminate();
-		}
-		if (this.pgProvider) {
-			if (this.logger)
-				this.logger.verbose_log(
-					"Closing PGlite database connection (worker)..."
-				);
-			await this.pgProvider.close().catch((err: any) => {
-				if (this.logger)
-					this.logger.error("Error closing PGlite (worker):", err);
-			});
-		}
-
-		this.vectorizer = null;
 		this.commandHandler = null;
-		this.pgProvider = null;
-		this.vectorStore = null;
 		this.notificationService = null;
 		this.textChunker = null;
 		this.vectorizationService = null;
 		this.searchService = null;
 		this.storageManagementService = null;
 		this.initializationPromise = null;
-		this.isWorkerReady = false;
-		this.isDbReady = false;
 		this.proxy = null;
 		this.logger = null;
 	}
@@ -487,112 +389,57 @@ export default class MyVectorPlugin extends Plugin {
 			this.logger.updateSettings(this.settings);
 		}
 	}
-	async clearResources(): Promise<void> {
+	async clearResources(discardDbOnly: boolean): Promise<void> {
 		if (this.logger)
 			this.logger.log(
 				"Attempting to delete resources (model cache and PGlite resource cache)..."
 			);
 
-		const cacheNamePatterns = [
-			/^transformers-cache$/i,
-			/^huggingface-hub$/i,
-		];
-		let clearedSomething = false;
-
-		if (this.proxy) {
-			try {
-				this.logger?.verbose_log(
-					"Closing PGlite DB via worker proxy..."
-				);
+		if (discardDbOnly) {
+			if (this.proxy) {
 				await this.proxy.closeDatabase();
-				this.logger?.verbose_log("PGlite DB closed via worker proxy.");
-			} catch (error) {
-				this.logger?.error(
-					"Error closing PGlite DB via worker proxy:",
-					error
-				);
+				this.logger?.verbose_log("PGlite database closed via worker.");
 			}
-		}
+			await deleteDB("pglite/" + DB_NAME);
+			this.logger?.verbose_log(
+				"PGlite database files deleted from IndexedDB."
+			);
+		} else {
+			// Transformers.js モデルキャッシュの削除
+			const cacheNamePatterns = [
+				/^transformers-cache$/i,
+				/^huggingface-hub$/i,
+			];
+			let clearedSomething = false;
 
-		const pgliteResourceCacheName = "pglite-resources-cache";
-
-		try {
-			if (window.caches) {
-				const cacheKeys = await window.caches.keys();
-				if (this.logger)
-					this.logger.verbose_log(
-						"Available cache API keys:",
-						cacheKeys
-					);
-
-				for (const key of cacheKeys) {
-					for (const pattern of cacheNamePatterns) {
-						if (pattern.test(key)) {
-							if (this.logger)
-								this.logger.log(`Deleting cache API: ${key}`);
-							await window.caches.delete(key);
-							clearedSomething = true;
-							if (this.logger)
-								this.logger.log(
-									`Cache API ${key} deleted successfully.`
-								);
-							break;
-						}
-					}
+			const cacheKeys = await caches.keys();
+			for (const key of cacheKeys) {
+				if (cacheNamePatterns.some((pattern) => pattern.test(key))) {
+					await caches.delete(key);
+					this.logger?.verbose_log(`Cache '${key}' deleted.`);
+					clearedSomething = true;
 				}
-			} else {
-				if (this.logger)
-					this.logger.warn(
-						"Cache API is not available in this environment."
-					);
 			}
 
-			if (this.logger)
-				this.logger.log(
-					`Attempting to delete IndexedDB: ${pgliteResourceCacheName}`
-				);
-			try {
-				await deleteDB(pgliteResourceCacheName, {
-					blocked: () => {
-						if (this.logger)
-							this.logger.warn(
-								`Deletion of IndexedDB ${pgliteResourceCacheName} was blocked.`
-							);
+			// PGlite リソースキャッシュの削除
+			await deleteDB("pglite-resources-cache");
+			this.logger?.verbose_log(
+				"PGlite resource cache deleted from IndexedDB."
+			);
 
-						new Notice(
-							`Deletion of PGlite resource cache (${pgliteResourceCacheName}) was blocked. Please reload Obsidian and try again.`
-						);
-					},
-				});
-				clearedSomething = true;
-				if (this.logger)
-					this.logger.log(
-						`IndexedDB ${pgliteResourceCacheName} deleted successfully (or did not exist).`
-					);
-			} catch (idbError: any) {
-				if (this.logger)
-					this.logger.error(
-						`Error deleting IndexedDB ${pgliteResourceCacheName}:`,
-						idbError
-					);
+			// PGlite DBデータファイルの削除
+			if (this.proxy) {
+				await this.proxy.closeDatabase();
+				this.logger?.verbose_log("PGlite database closed via worker.");
 			}
+			await deleteDB("pglite/" + DB_NAME);
+			this.logger?.verbose_log(
+				"PGlite database files deleted from IndexedDB."
+			);
 
-			if (clearedSomething) {
-				if (this.logger)
-					this.logger.log("Resource deletion process completed.");
-			} else {
-				if (this.logger)
-					this.logger.log(
-						"No matching model caches or PGlite resource cache found to delete."
-					);
-				new Notice(
-					"No known resources (e.g., 'transformers-cache', 'huggingface-hub', 'pglite-resources-cache') found to delete."
-				);
+			if (!clearedSomething) {
+				this.logger?.verbose_log("No matching caches found to clear.");
 			}
-		} catch (error: any) {
-			if (this.logger)
-				this.logger.error("Error deleting resources:", error);
-			throw error;
 		}
 	}
 }

@@ -27,14 +27,16 @@ export interface VectorizeSentencesRequest extends BaseRequest {
 	};
 }
 
+import {
+	ChunkInfo,
+	SearchOptions,
+	SimilarityResultItem,
+} from "../../core/storage/types";
+
 export interface VectorizeAndStoreRequest extends BaseRequest {
 	type: "vectorizeAndStore";
 	payload: {
-		documents: Array<{
-			id: string;
-			content: string;
-			metadata?: Record<string, any>;
-		}>;
+		chunks: ChunkInfo[];
 	};
 }
 
@@ -43,7 +45,7 @@ export interface SearchRequest extends BaseRequest {
 	payload: {
 		query: string;
 		limit?: number;
-		threshold?: number;
+		options?: SearchOptions;
 	};
 }
 
@@ -86,46 +88,34 @@ export interface VectorizeSentencesResponse extends BaseResponse {
 }
 
 export interface VectorizeAndStoreResponse extends BaseResponse {
-	type: "vectorizeAndStoreResult";
+	type: "vectorizeAndStoreResponse";
 	payload: {
-		success: boolean;
-		processedCount: number;
-		errors?: string[];
+		count: number;
 	};
 }
 
 export interface SearchResult extends BaseResponse {
 	type: "searchResult";
-	payload: {
-		results: Array<{
-			id: string;
-			content: string;
-			score: number;
-			metadata?: Record<string, any>;
-		}>;
-	};
+	payload: SimilarityResultItem[];
 }
 
 export interface RebuildDbResponse extends BaseResponse {
-	type: "rebuildDbResult";
-	payload: {
-		success: boolean;
-		message: string;
-	};
+	type: "rebuildDbResponse";
+	payload: boolean;
 }
 
 export interface TestSimilarityResponse extends BaseResponse {
-	type: "testSimilarityResult";
+	type: "testSimilarityResponse";
 	payload: string;
 }
 
 export interface DbClosedResponse extends BaseResponse {
-	type: "dbClosed";
+	type: "dbClosedResponse";
 	payload: boolean;
 }
 
 export interface ErrorResponse extends BaseResponse {
-	type: "error";
+	type: "errorResponse";
 	payload: string;
 }
 

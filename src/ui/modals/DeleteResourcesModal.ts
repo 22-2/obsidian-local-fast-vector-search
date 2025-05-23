@@ -1,12 +1,11 @@
 import { App, Modal, Setting, Notice } from "obsidian";
-import MyVectorPlugin from "../../main";
 
 export class DeleteResourcesModal extends Modal {
-	plugin: MyVectorPlugin;
+	private onConfirm: () => Promise<void>;
 
-	constructor(app: App, plugin: MyVectorPlugin) {
+	constructor(app: App, onConfirm: () => Promise<void>) {
 		super(app);
-		this.plugin = plugin;
+		this.onConfirm = onConfirm;
 	}
 
 	onOpen() {
@@ -24,7 +23,7 @@ export class DeleteResourcesModal extends Modal {
 					.onClick(async () => {
 						const notice = new Notice("Deleting resources...", 0);
 						try {
-							await this.plugin.clearResources();
+							await this.onConfirm();
 							notice.setMessage(
 								"Resources deleted successfully. They will be re-downloaded on next use."
 							);

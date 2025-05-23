@@ -1,12 +1,10 @@
-import type { PGliteProvider } from "../storage/pglite/PGliteProvider";
-import type { PGliteTableManager } from "../storage/pglite/PGliteTableManager";
 import { LoggerService } from "../../shared/services/LoggerService";
+import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
 
 export class StorageManagementService {
 	private logger: LoggerService | null;
 	constructor(
-		private provider: PGliteProvider,
-		private tableManager: PGliteTableManager,
+		private workerProxy: IntegratedWorkerProxy,
 		logger: LoggerService | null
 	) {
 		this.logger = logger;
@@ -18,27 +16,9 @@ export class StorageManagementService {
 		try {
 			if (onProgress)
 				onProgress(
-					"Rebuilding storage: Closing provider connection..."
+					"Rebuilding storage: Initiating database rebuild..."
 				);
-			await this.provider.close();
-
-			if (onProgress)
-				onProgress(
-					"Rebuilding storage: Deleting existing database file..."
-				);
-			await this.provider.discardDB();
-
-			if (onProgress)
-				onProgress("Rebuilding storage: Re-initializing provider...");
-			await this.provider.initialize();
-
-			if (onProgress)
-				onProgress(
-					"Rebuilding storage: Creating new embeddings table..."
-				);
-			// The DB is new, so force=false is appropriate. createTable handles schema/extensions.
-			await this.tableManager.createTable(false);
-
+			await this.workerProxy.rebuildDatabase();
 			if (onProgress) onProgress("Storage rebuild complete.");
 			this.logger?.verbose_log(
 				"Storage rebuild completed by StorageManagementService."

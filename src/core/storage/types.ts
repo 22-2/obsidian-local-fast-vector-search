@@ -18,3 +18,10 @@ export interface SearchOptions {
 	efSearch?: number;
 	limit?: number;
 }
+
+export interface ChunkInfo {
+	filePath: string;
+	chunkOffsetStart: number;
+	chunkOffsetEnd: number;
+	text: string;
+}

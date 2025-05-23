@@ -41,14 +41,21 @@ import type {
 import {
 	EMBEDDINGS_DIMENSIONS,
 	DB_NAME,
+	EMBEDDINGS_TABLE_NAME,
 } from "../../shared/constants/appConstants";
 import {
 	WorkerRequest,
 	WorkerResponse,
 } from "../../shared/types/integrated-worker";
+import {
+	VectorItem,
+	SearchOptions,
+	ChunkInfo,
+	SimilarityResultItem,
+} from "../../core/storage/types";
 
 // PGlite関連のインポート
-import { PGlite } from "@electric-sql/pglite";
+import { PGlite, Transaction } from "@electric-sql/pglite";
 import { IdbFs } from "@electric-sql/pglite";
 import { IDBPDatabase, openDB } from "idb";
 import { SQL_QUERIES } from "../storage/pglite/sql-queries";
@@ -285,7 +292,7 @@ async function initialize(): Promise<boolean> {
 		postLogMessage("info", "PGlite instance created.");
 
 		// スキーマ設定ロジック
-		const tableName = "vectors";
+		const tableName = EMBEDDINGS_TABLE_NAME;
 		const dimensions = EMBEDDINGS_DIMENSIONS;
 
 		await pgliteInstance.exec(SQL_QUERIES.SET_ENVIRONMENT);
@@ -463,6 +470,193 @@ async function testSelfSimilarity(): Promise<string> {
 	}
 }
 
+async function deleteExistingRecords(
+	tx: Transaction,
+	items: VectorItem[],
+	batchSize: number
+): Promise<void> {
+	const filePathsToDelete = [...new Set(items.map((item) => item.filePath))];
+	const quotedTableName = quoteIdentifier(EMBEDDINGS_TABLE_NAME);
+
+	for (let i = 0; i < filePathsToDelete.length; i += batchSize) {
+		const batchFilePaths = filePathsToDelete.slice(i, i + batchSize);
+		if (batchFilePaths.length === 0) continue;
+
+		const placeholders = batchFilePaths
+			.map((_, idx) => `$${idx + 1}`)
+			.join(", ");
+
+		await tx.query(
+			`DELETE FROM ${quotedTableName} WHERE file_path IN (${placeholders})`,
+			batchFilePaths
+		);
+
+		postLogMessage(
+			"verbose",
+			`Deleted vectors for ${batchFilePaths.length} files from ${EMBEDDINGS_TABLE_NAME}`
+		);
+	}
+}
+
+async function batchInsertRecords(
+	tx: Transaction,
+	items: VectorItem[],
+	batchSize: number
+): Promise<void> {
+	const quotedTableName = quoteIdentifier(EMBEDDINGS_TABLE_NAME);
+
+	for (let i = 0; i < items.length; i += batchSize) {
+		const batchItems = items.slice(i, i + batchSize);
+		if (batchItems.length === 0) continue;
+
+		const valuePlaceholders: string[] = [];
+		const params: (string | number | string | null)[] = [];
+		let paramIndex = 1;
+
+		for (const item of batchItems) {
+			valuePlaceholders.push(
+				`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`
+			);
+			params.push(
+				item.filePath,
+				item.chunkOffsetStart,
+				item.chunkOffsetEnd,
+				JSON.stringify(item.vector),
+				null
+			);
+		}
+
+		if (valuePlaceholders.length > 0) {
+			const insertSql = `
+				INSERT INTO ${quotedTableName} 
+				(file_path, chunk_offset_start, chunk_offset_end, embedding, chunk)
+				VALUES ${valuePlaceholders.join(", ")}
+				`;
+			await tx.query(insertSql, params);
+			postLogMessage(
+				"verbose",
+				`Inserted ${batchItems.length} vectors into ${EMBEDDINGS_TABLE_NAME}`
+			);
+		}
+	}
+}
+
+async function upsertVectors(
+	items: VectorItem[],
+	batchSize: number = 100
+): Promise<void> {
+	if (!pgliteInstance) {
+		throw new Error("PGlite instance is not initialized.");
+	}
+	if (items.length === 0) {
+		postLogMessage("verbose", "No vectors to upsert.");
+		return;
+	}
+
+	try {
+		await pgliteInstance.transaction(async (tx: Transaction) => {
+			// 1. まず既存のファイルパスに関連するレコードを削除
+			await deleteExistingRecords(tx, items, batchSize);
+
+			// 2. 新しいレコードをバッチで挿入
+			await batchInsertRecords(tx, items, batchSize);
+		});
+
+		postLogMessage(
+			"verbose",
+			`Successfully upserted all ${items.length} vectors into ${EMBEDDINGS_TABLE_NAME}`
+		);
+	} catch (error) {
+		postLogMessage(
+			"error",
+			`Error in upsertVectors transaction for ${EMBEDDINGS_TABLE_NAME}:`,
+			error
+		);
+		throw error;
+	}
+}
+
+async function searchSimilar(
+	vector: number[],
+	limit: number = 20,
+	options?: SearchOptions
+): Promise<SimilarityResultItem[]> {
+	if (!pgliteInstance) {
+		throw new Error("PGlite instance is not initialized.");
+	}
+	const quotedTableName = quoteIdentifier(EMBEDDINGS_TABLE_NAME);
+	const efSearch = options?.efSearch || 280;
+
+	try {
+		await pgliteInstance.query(`SET hnsw.ef_search = ${efSearch}`);
+
+		const result = await pgliteInstance.query<SimilarityResultItem>(
+			`SELECT id, file_path, chunk_offset_start, chunk_offset_end, chunk,
+				 embedding <-> $1 as distance
+				 FROM ${quotedTableName}
+				 ORDER BY distance ASC
+				 LIMIT $2`,
+			[JSON.stringify(vector), limit]
+		);
+		return result.rows;
+	} catch (error) {
+		postLogMessage(
+			"error",
+			`Error searching similar vectors in ${EMBEDDINGS_TABLE_NAME}:`,
+			error
+		);
+		throw error;
+	}
+}
+
+async function rebuildDatabaseInternal(): Promise<void> {
+	if (!pgliteInstance) {
+		throw new Error("PGlite instance is not initialized.");
+	}
+
+	postLogMessage("info", "Rebuilding database...");
+	const tableName = EMBEDDINGS_TABLE_NAME;
+	const dimensions = EMBEDDINGS_DIMENSIONS;
+
+	try {
+		// 既存のテーブルを削除
+		await pgliteInstance.exec(
+			`DROP TABLE IF EXISTS ${quoteIdentifier(tableName)} CASCADE;`
+		);
+		postLogMessage("info", `Dropped existing table ${tableName}.`);
+
+		// スキーマ設定ロジックを再実行
+		await pgliteInstance.exec(SQL_QUERIES.SET_ENVIRONMENT);
+		postLogMessage("info", "Database environment set.");
+
+		await pgliteInstance.exec(SQL_QUERIES.CREATE_EXTENSION);
+		postLogMessage("info", "Vector extension ensured.");
+
+		const createTableSql = SQL_QUERIES.CREATE_TABLE.replace(
+			"$1",
+			quoteIdentifier(tableName)
+		).replace("$2", dimensions.toString());
+		await pgliteInstance.exec(createTableSql);
+		postLogMessage("info", `Table ${tableName} ensured.`);
+
+		const indexName = `${tableName}_hnsw_idx`;
+		const createIndexSql = SQL_QUERIES.CREATE_HNSW_INDEX.replace(
+			"$1",
+			quoteIdentifier(indexName)
+		).replace("$2", quoteIdentifier(tableName));
+		await pgliteInstance.exec(createIndexSql);
+		postLogMessage(
+			"info",
+			`Index ${indexName} for table ${tableName} ensured.`
+		);
+
+		postLogMessage("info", "Database rebuild completed successfully.");
+	} catch (error) {
+		postLogMessage("error", "Error rebuilding database:", error);
+		throw error;
+	}
+}
+
 // メッセージハンドラー
 worker.onmessage = async (event: MessageEvent) => {
 	const request = event.data as WorkerRequest;
@@ -501,105 +695,116 @@ worker.onmessage = async (event: MessageEvent) => {
 				break;
 
 			case "vectorizeAndStore":
-				if (!isInitialized) {
+				if (!isInitialized || !isDbInitialized) {
 					throw new Error(
-						"Worker not initialized. Call initialize first."
+						"Worker or DB not initialized. Call initialize first."
 					);
 				}
-				// TODO: 実装 (フェーズ3)
-				postLogMessage(
-					"info",
-					"vectorizeAndStore request received (not yet implemented)"
+				if (!Array.isArray(payload.chunks)) {
+					throw new Error(
+						"Invalid payload for vectorizeAndStore command."
+					);
+				}
+				const chunksToVectorize = payload.chunks as ChunkInfo[];
+				const sentencesToVectorize = chunksToVectorize.map(
+					(chunk) => chunk.text
 				);
+				const vectorizedResults = await vectorizeSentences(
+					sentencesToVectorize
+				);
+
+				const vectorItems: VectorItem[] = chunksToVectorize.map(
+					(chunk, index) => ({
+						filePath: chunk.filePath,
+						chunkOffsetStart: chunk.chunkOffsetStart,
+						chunkOffsetEnd: chunk.chunkOffsetEnd,
+						vector: vectorizedResults[index],
+						chunk: chunk.text,
+					})
+				);
+				await upsertVectors(vectorItems);
 				postMessage({
+					type: "vectorizeAndStoreResponse",
+					payload: { count: vectorItems.length },
 					id,
-					type: "vectorizeAndStoreResult",
-					payload: {
-						success: false,
-						processedCount: 0,
-						errors: ["Not yet implemented"],
-					},
-				} as WorkerResponse);
+				});
 				break;
 
 			case "search":
-				if (!isInitialized) {
+				if (!isInitialized || !isDbInitialized) {
 					throw new Error(
-						"Worker not initialized. Call initialize first."
+						"Worker or DB not initialized. Call initialize first."
 					);
 				}
-				// TODO: 実装
-				postLogMessage(
-					"info",
-					"search request received (not yet implemented)"
+				if (typeof payload.query !== "string") {
+					throw new Error("Invalid query for search command.");
+				}
+				const queryVector = (
+					await vectorizeSentences([payload.query])
+				)[0];
+				const searchResults = await searchSimilar(
+					queryVector,
+					payload.limit,
+					payload.options
 				);
 				postMessage({
-					id,
 					type: "searchResult",
-					payload: {
-						results: [],
-					},
-				} as WorkerResponse);
+					payload: searchResults,
+					id,
+				});
 				break;
 
 			case "rebuildDb":
-				if (!isInitialized) {
+				if (!isInitialized || !isDbInitialized) {
 					throw new Error(
-						"Worker not initialized. Call initialize first."
+						"Worker or DB not initialized. Call initialize first."
 					);
 				}
-				// TODO: 実装
-				postLogMessage(
-					"info",
-					"rebuildDb request received (not yet implemented)"
-				);
+				await rebuildDatabaseInternal();
 				postMessage({
+					type: "rebuildDbResponse",
+					payload: true,
 					id,
-					type: "rebuildDbResult",
-					payload: {
-						success: false,
-						message: "Not yet implemented",
-					},
-				} as WorkerResponse);
+				});
 				break;
 
 			case "testSimilarity":
-				if (!isInitialized) {
-					throw new Error(
-						"Worker not initialized. Call initialize first."
-					);
-				}
 				const testResult = await testSelfSimilarity();
 				postMessage({
 					id,
-					type: "testSimilarityResult",
+					type: "testSimilarityResponse",
 					payload: testResult,
-				} as WorkerResponse);
+				});
 				break;
 
 			case "closeDb":
 				await closeDatabase();
 				postMessage({
 					id,
-					type: "dbClosed",
+					type: "dbClosedResponse",
 					payload: true,
-				} as WorkerResponse);
+				});
 				break;
 
 			default:
-				postLogMessage("warn", "Unknown message type:", type);
+				postLogMessage("warn", `Unknown message type: ${type}`);
 				postMessage({
 					id,
-					type: "error",
+					type: "errorResponse",
 					payload: `Unknown message type: ${type}`,
-				} as WorkerResponse);
+				});
+				break;
 		}
 	} catch (error: any) {
-		postLogMessage("error", `Error processing message ${type}:`, error);
+		postLogMessage(
+			"error",
+			`Error processing message type ${type}:`,
+			error
+		);
 		postMessage({
 			id,
-			type: "error",
-			payload: `Error processing ${type}: ${error.message}`,
-		} as WorkerResponse);
+			type: "errorResponse",
+			payload: error.message || "An unknown error occurred.",
+		});
 	}
 };
