@@ -14,7 +14,6 @@ export class VectorizationService {
 	) {
 		this.logger = logger;
 	}
-
 	public async vectorizeAllNotes(
 		onProgress?: (message: string, isOverallProgress?: boolean) => void
 	): Promise<{ totalVectorsProcessed: number }> {
@@ -23,7 +22,7 @@ export class VectorizationService {
 		const allChunksToProcess: ChunkInfo[] = [];
 
 		if (onProgress)
-			onProgress("Starting vectorization for all notes...", true);
+			onProgress("Starting to scan and chunk all notes...", true);
 
 		for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
 			const file = files[fileIndex];
@@ -79,22 +78,66 @@ export class VectorizationService {
 			}
 		}
 
+		// バッチ処理で全チャンクをWorkerに送信
+		const WORKER_BATCH_SIZE = 200; // バッチあたりのチャンク数
+
 		if (allChunksToProcess.length > 0) {
 			if (onProgress)
 				onProgress(
-					`Vectorizing and storing ${allChunksToProcess.length} chunks...`,
+					`Collected ${allChunksToProcess.length} chunks. Starting vectorization and storage in batches...`,
 					true
 				);
-			const result = await this.workerProxy.vectorizeAndStoreChunks(
-				allChunksToProcess
-			);
-			totalVectorsProcessed = result.count;
-			this.logger?.verbose_log(
-				`Upserted ${totalVectorsProcessed} vectors in batch.`
-			);
+
+			for (
+				let i = 0;
+				i < allChunksToProcess.length;
+				i += WORKER_BATCH_SIZE
+			) {
+				const batchChunks = allChunksToProcess.slice(
+					i,
+					i + WORKER_BATCH_SIZE
+				);
+				const currentBatchNum = Math.floor(i / WORKER_BATCH_SIZE) + 1;
+				const totalBatches = Math.ceil(
+					allChunksToProcess.length / WORKER_BATCH_SIZE
+				);
+
+				if (onProgress) {
+					onProgress(
+						`Processing batch ${currentBatchNum}/${totalBatches} (${batchChunks.length} chunks)...`,
+						true
+					);
+				}
+
+				try {
+					const result =
+						await this.workerProxy.vectorizeAndStoreChunks(
+							batchChunks
+						);
+					totalVectorsProcessed += result.count;
+					this.logger?.verbose_log(
+						`Batch ${currentBatchNum}/${totalBatches} processed. Upserted ${result.count} vectors. Total processed: ${totalVectorsProcessed}`
+					);
+				} catch (batchError) {
+					this.logger?.error(
+						`Error processing batch ${currentBatchNum}/${totalBatches} (starting at index ${i}):`,
+						batchError
+					);
+					// エラーが発生した場合、処理を中断してエラーを伝播させる
+					throw batchError;
+				}
+			}
+
+			if (onProgress)
+				onProgress(
+					`All ${Math.ceil(
+						allChunksToProcess.length / WORKER_BATCH_SIZE
+					)} batches processed. Total vectors upserted: ${totalVectorsProcessed}.`,
+					true
+				);
 		} else {
 			if (onProgress)
-				onProgress("No new vectors to save from any notes.", true);
+				onProgress("No new chunks to process from any notes.", true);
 		}
 		return { totalVectorsProcessed };
 	}

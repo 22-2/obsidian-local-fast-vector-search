@@ -3,6 +3,7 @@ export interface VectorItem {
 	chunkOffsetStart: number;
 	chunkOffsetEnd: number;
 	vector: number[];
+	chunk: string;
 }
 
 export interface SimilarityResultItem {

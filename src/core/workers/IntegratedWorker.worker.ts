@@ -522,7 +522,7 @@ async function batchInsertRecords(
 				item.chunkOffsetStart,
 				item.chunkOffsetEnd,
 				JSON.stringify(item.vector),
-				null
+				item.chunk // VectorItemのchunkプロパティを使用
 			);
 		}
 
@@ -531,11 +531,15 @@ async function batchInsertRecords(
 				INSERT INTO ${quotedTableName} 
 				(file_path, chunk_offset_start, chunk_offset_end, embedding, chunk)
 				VALUES ${valuePlaceholders.join(", ")}
+				ON CONFLICT (file_path, chunk_offset_start) DO UPDATE SET
+					chunk_offset_end = EXCLUDED.chunk_offset_end,
+					embedding = EXCLUDED.embedding,
+					chunk = EXCLUDED.chunk
 				`;
 			await tx.query(insertSql, params);
 			postLogMessage(
 				"verbose",
-				`Inserted ${batchItems.length} vectors into ${EMBEDDINGS_TABLE_NAME}`
+				`Upserted ${batchItems.length} vectors into ${EMBEDDINGS_TABLE_NAME}`
 			);
 		}
 	}
@@ -555,10 +559,7 @@ async function upsertVectors(
 
 	try {
 		await pgliteInstance.transaction(async (tx: Transaction) => {
-			// 1. まず既存のファイルパスに関連するレコードを削除
-			await deleteExistingRecords(tx, items, batchSize);
-
-			// 2. 新しいレコードをバッチで挿入
+			// UPSERT処理のみ実行（deleteExistingRecordsは削除）
 			await batchInsertRecords(tx, items, batchSize);
 		});
 

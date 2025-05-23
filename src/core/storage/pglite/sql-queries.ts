@@ -23,7 +23,8 @@ export const SQL_QUERIES = {
 			chunk_offset_start INTEGER,
 			chunk_offset_end INTEGER,
 			chunk TEXT,
-			embedding halfvec($2)
+			embedding halfvec($2),
+			UNIQUE (file_path, chunk_offset_start)
 		)
 	`,
 	CREATE_HNSW_INDEX: `
