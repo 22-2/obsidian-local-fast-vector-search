@@ -19,6 +19,7 @@ import { VectorizationService } from "./core/services/VectorizationService";
 import { SearchService } from "./core/services/SearchService";
 import { StorageManagementService } from "./core/services/StorageManagementService";
 import { PGliteTableManager } from "./core/storage/pglite/PGliteTableManager";
+import { IntegratedWorkerProxy } from "./core/workers/IntegratedWorkerProxy";
 
 import { PluginSettings, DEFAULT_SETTINGS } from "./pluginSettings";
 import { VectorizerSettingTab } from "./ui/settings";
@@ -42,6 +43,8 @@ export default class MyVectorPlugin extends Plugin {
 	textChunker: TextChunker | null = null;
 	logger: LoggerService | null = null; // 型を修正し、初期値をnullに設定
 
+	// 新しい統合ワーカープロキシ
+	proxy: IntegratedWorkerProxy | null = null;
 	async onload() {
 		this.settings = Object.assign(
 			{},
@@ -50,6 +53,9 @@ export default class MyVectorPlugin extends Plugin {
 		);
 		this.logger = new LoggerService();
 		this.logger.updateSettings(this.settings);
+
+		// 統合ワーカープロキシの初期化
+		this.proxy = new IntegratedWorkerProxy(this.logger);
 
 		this.addSettingTab(new VectorizerSettingTab(this.app, this));
 
@@ -223,7 +229,6 @@ export default class MyVectorPlugin extends Plugin {
 		if (this.logger)
 			this.logger.verbose_log("Resource initialization confirmed.");
 	}
-
 	async initializeResources(): Promise<void> {
 		if (this.isWorkerReady && this.isDbReady) {
 			if (this.logger)
@@ -238,6 +243,16 @@ export default class MyVectorPlugin extends Plugin {
 		const initNotice = new Notice("Initializing resources...", 0);
 
 		try {
+			// 0. 統合ワーカープロキシの初期化を最初に実行
+			if (this.proxy) {
+				initNotice.setMessage("Initializing integrated worker...");
+				await this.proxy.ensureInitialized();
+				if (this.logger)
+					this.logger.verbose_log(
+						"IntegratedWorkerProxy initialized."
+					);
+			}
+
 			// 1. Vectorizer (Worker) の初期化
 			if (!this.isWorkerReady) {
 				initNotice.setMessage("Initializing vectorizer worker...");
@@ -423,9 +438,16 @@ export default class MyVectorPlugin extends Plugin {
 				);
 		}
 	}
-
 	async onunload() {
 		if (this.logger) this.logger.verbose_log("Unloading vector plugin...");
+
+		// 統合ワーカープロキシの終了
+		if (this.proxy) {
+			if (this.logger)
+				this.logger.verbose_log("Terminating integrated worker...");
+			this.proxy.terminate();
+		}
+
 		if (this.vectorizer instanceof WorkerProxyVectorizer) {
 			if (this.logger)
 				this.logger.verbose_log("Terminating vectorizer worker...");
@@ -454,6 +476,7 @@ export default class MyVectorPlugin extends Plugin {
 		this.initializationPromise = null;
 		this.isWorkerReady = false;
 		this.isDbReady = false;
+		this.proxy = null;
 		this.logger = null;
 	}
 
