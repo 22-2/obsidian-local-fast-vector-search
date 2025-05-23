@@ -1,3 +1,3 @@
 export const DB_NAME = "local-fast-vector-search"; // Idbの名前
 export const EMBEDDINGS_TABLE_NAME = "embeddings";
-export const EMBEDDINGS_DIMENSIONS = 384;
+export const EMBEDDINGS_DIMENSIONS = 256;
