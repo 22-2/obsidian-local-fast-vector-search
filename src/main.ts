@@ -1,3 +1,4 @@
+// main.ts
 import { Plugin, Notice, App } from "obsidian";
 import { LoggerService } from "./shared/services/LoggerService";
 import { CommandHandler } from "./commands";
@@ -253,16 +254,14 @@ export default class MyVectorPlugin extends Plugin {
 
 		try {
 			// 0. 統合ワーカープロキシの初期化を最初に実行
-			if (this.proxy) {
-				initNotice.setMessage("Initializing integrated worker...");
-				await this.proxy.ensureInitialized();
-				if (this.logger)
-					this.logger.verbose_log(
-						"IntegratedWorkerProxy initialized."
-					);
-			} else {
-				throw new Error("IntegratedWorkerProxy is not initialized.");
+			// proxyがnullの場合のみ新規作成
+			if (!this.proxy) {
+				this.proxy = new IntegratedWorkerProxy(this.logger);
 			}
+			initNotice.setMessage("Initializing integrated worker...");
+			await this.proxy.ensureInitialized();
+			if (this.logger)
+				this.logger.verbose_log("IntegratedWorkerProxy initialized.");
 
 			// 1. Initialize TextChunker
 			if (!this.textChunker) {
@@ -347,12 +346,18 @@ export default class MyVectorPlugin extends Plugin {
 				`Resource initialization failed: ${error.message}`
 			);
 			setTimeout(() => initNotice.hide(), 5000);
+			// 失敗時は全てをnullに戻し、再試行可能にする
 			this.commandHandler = null;
 			this.textChunker = null;
 			this.vectorizationService = null;
 			this.searchService = null;
 			this.storageManagementService = null;
 			this.initializationPromise = null;
+			// プロキシもエラーの原因になりうるので、一旦終了してnullにする
+			if (this.proxy) {
+				this.proxy.terminate();
+				this.proxy = null;
+			}
 			throw error;
 		} finally {
 			if (this.logger)
@@ -392,19 +397,38 @@ export default class MyVectorPlugin extends Plugin {
 	async clearResources(discardDbOnly: boolean): Promise<void> {
 		if (this.logger)
 			this.logger.log(
-				"Attempting to delete resources (model cache and PGlite resource cache)..."
+				`Attempting to delete resources (discardDbOnly: ${discardDbOnly})...`
 			);
 
-		if (discardDbOnly) {
-			if (this.proxy) {
+		if (this.proxy) {
+			try {
 				await this.proxy.closeDatabase();
 				this.logger?.verbose_log("PGlite database closed via worker.");
+			} catch (e) {
+				this.logger?.warn(
+					"Failed to gracefully close DB via worker, proceeding with termination.",
+					e
+				);
 			}
-			await deleteDB("pglite/" + DB_NAME);
+			this.proxy.terminate();
+			this.proxy = null;
+			this.initializationPromise = null;
+
+			this.vectorizationService = null;
+			this.searchService = null;
+			this.storageManagementService = null;
+			this.commandHandler = null;
 			this.logger?.verbose_log(
-				"PGlite database files deleted from IndexedDB."
+				"IntegratedWorkerProxy terminated and plugin services reset."
 			);
-		} else {
+		}
+
+		await deleteDB("pglite/" + DB_NAME);
+		this.logger?.verbose_log(
+			"PGlite database files deleted from IndexedDB."
+		);
+
+		if (!discardDbOnly) {
 			// Transformers.js モデルキャッシュの削除
 			const cacheNamePatterns = [
 				/^transformers-cache$/i,
@@ -421,25 +445,18 @@ export default class MyVectorPlugin extends Plugin {
 				}
 			}
 
-			// PGlite リソースキャッシュの削除
+			// PGlite リソースキャッシュの削除 (postgres.data, postgres.wasm, vector.tar.gz)
 			await deleteDB("pglite-resources-cache");
 			this.logger?.verbose_log(
 				"PGlite resource cache deleted from IndexedDB."
-			);
-
-			// PGlite DBデータファイルの削除
-			if (this.proxy) {
-				await this.proxy.closeDatabase();
-				this.logger?.verbose_log("PGlite database closed via worker.");
-			}
-			await deleteDB("pglite/" + DB_NAME);
-			this.logger?.verbose_log(
-				"PGlite database files deleted from IndexedDB."
 			);
 
 			if (!clearedSomething) {
 				this.logger?.verbose_log("No matching caches found to clear.");
 			}
 		}
+		new Notice(
+			"Resources cleanup complete. Plugin will re-initialize on next action."
+		);
 	}
 }
