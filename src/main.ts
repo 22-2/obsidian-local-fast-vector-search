@@ -461,7 +461,8 @@ export default class MyVectorPlugin extends Plugin {
 					this.app,
 					this.vectorizationService,
 					this.searchService,
-					this.storageManagementService
+					this.storageManagementService,
+					this.notificationService
 				);
 				if (this.logger)
 					this.logger.verbose_log(

@@ -69,11 +69,11 @@ export class SearchModal extends Modal {
 			return;
 		}
 
-		const notice = this.notificationService.showNotice("Searching...", 0);
+		const noticeId = this.notificationService.showNotice("Searching...", 0);
 		try {
 			this.results = await this.commandHandler.searchSimilarNotes(
 				this.query,
-				10
+				100
 			); // Search top 10
 			await this.renderResults();
 			this.notificationService.showNotice(
@@ -88,7 +88,7 @@ export class SearchModal extends Modal {
 			await this.renderResults();
 			this.notificationService.showNotice("Search failed.");
 		} finally {
-			// NotificationService handles hiding notices, no need for setTimeout here
+			this.notificationService.hideNotice(noticeId);
 		}
 	}
 
