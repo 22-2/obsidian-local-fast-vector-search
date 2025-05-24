@@ -22,7 +22,6 @@ export default class MyVectorPlugin extends Plugin {
 	private initializationPromise: Promise<void> | null = null;
 	commandHandler: CommandHandler | null = null;
 
-	// 新しい統合ワーカープロキシ
 	proxy: IntegratedWorkerProxy | null = null;
 
 	// Service instances
@@ -31,7 +30,7 @@ export default class MyVectorPlugin extends Plugin {
 	storageManagementService: StorageManagementService | null = null;
 	notificationService: NotificationService | null = null;
 	textChunker: TextChunker | null = null;
-	logger: LoggerService | null = null; // 型を修正し、初期値をnullに設定
+	logger: LoggerService | null = null;
 
 	async onload() {
 		this.settings = Object.assign(
@@ -41,10 +40,6 @@ export default class MyVectorPlugin extends Plugin {
 		);
 		this.logger = new LoggerService();
 		this.logger.updateSettings(this.settings);
-
-		// 統合ワーカープロキシの初期化
-		this.proxy = new IntegratedWorkerProxy(this.logger);
-
 		this.addSettingTab(new VectorizerSettingTab(this.app, this));
 
 		this.app.workspace.onLayoutReady(async () => {
@@ -52,6 +47,9 @@ export default class MyVectorPlugin extends Plugin {
 				this.logger.verbose_log(
 					"Obsidian layout ready. Triggering background initialization."
 				);
+			// initializationPromise は initializeResources() が初めて呼ばれたときに設定される
+			// initializeResources() は ensureResourcesInitialized() から呼ばれるか、
+			// ここで直接呼ぶこともできるが、ensureResourcesInitialized() に任せるのが自然。ただし、ユーザー操作なしに自動で初期化を開始したい場合はここで呼ぶ。
 			this.initializationPromise = this.initializeResources().catch(
 				(error) => {
 					console.error(
@@ -61,6 +59,7 @@ export default class MyVectorPlugin extends Plugin {
 					new Notice(
 						"Failed to initialize resources. Check console."
 					);
+					this.initializationPromise = null;
 				}
 			);
 		});
@@ -205,6 +204,10 @@ export default class MyVectorPlugin extends Plugin {
 			this.commandHandler &&
 			this.proxy
 		) {
+			if (this.logger)
+				this.logger.verbose_log(
+					"Resources already confirmed initialized."
+				);
 			return;
 		}
 
@@ -213,7 +216,12 @@ export default class MyVectorPlugin extends Plugin {
 				this.logger.verbose_log(
 					"Initialization not started, starting now."
 				);
-			this.initializationPromise = this.initializeResources();
+			this.initializationPromise = this.initializeResources().catch(
+				(error) => {
+					this.initializationPromise = null;
+					throw error;
+				}
+			);
 		}
 
 		if (this.logger)
@@ -228,11 +236,14 @@ export default class MyVectorPlugin extends Plugin {
 			!this.commandHandler ||
 			!this.proxy
 		) {
-			throw new Error("Resources failed to initialize.");
+			const errorMsg = "Resources failed to initialize after waiting.";
+			if (this.logger) this.logger.error(errorMsg);
+			throw new Error(errorMsg);
 		}
 		if (this.logger)
 			this.logger.verbose_log("Resource initialization confirmed.");
 	}
+
 	async initializeResources(): Promise<void> {
 		if (
 			this.vectorizationService &&
@@ -254,9 +265,10 @@ export default class MyVectorPlugin extends Plugin {
 
 		try {
 			// 0. 統合ワーカープロキシの初期化を最初に実行
-			// proxyがnullの場合のみ新規作成
 			if (!this.proxy) {
 				this.proxy = new IntegratedWorkerProxy(this.logger);
+				if (this.logger)
+					this.logger.verbose_log("IntegratedWorkerProxy created.");
 			}
 			initNotice.setMessage("Initializing integrated worker...");
 			await this.proxy.ensureInitialized();
@@ -271,6 +283,9 @@ export default class MyVectorPlugin extends Plugin {
 			}
 
 			// 2. Initialize Services (after workerProxy, textChunker are ready)
+			if (!this.proxy)
+				throw new Error("Worker proxy is null after creation attempt.");
+
 			if (!this.vectorizationService) {
 				this.vectorizationService = new VectorizationService(
 					this.app,
@@ -352,7 +367,6 @@ export default class MyVectorPlugin extends Plugin {
 			this.vectorizationService = null;
 			this.searchService = null;
 			this.storageManagementService = null;
-			this.initializationPromise = null;
 			// プロキシもエラーの原因になりうるので、一旦終了してnullにする
 			if (this.proxy) {
 				this.proxy.terminate();
@@ -412,8 +426,6 @@ export default class MyVectorPlugin extends Plugin {
 			}
 			this.proxy.terminate();
 			this.proxy = null;
-			this.initializationPromise = null;
-
 			this.vectorizationService = null;
 			this.searchService = null;
 			this.storageManagementService = null;
@@ -455,6 +467,7 @@ export default class MyVectorPlugin extends Plugin {
 				this.logger?.verbose_log("No matching caches found to clear.");
 			}
 		}
+		this.initializationPromise = null;
 		new Notice(
 			"Resources cleanup complete. Plugin will re-initialize on next action."
 		);
