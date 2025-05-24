@@ -1,3 +1,31 @@
+import { matmul } from "@huggingface/transformers";
+import type {
+	PreTrainedModelType,
+	PreTrainedTokenizerType,
+	TensorType,
+} from "../../shared/types/huggingface";
+import {
+	EMBEDDINGS_DIMENSIONS,
+	DB_NAME,
+	EMBEDDINGS_TABLE_NAME,
+} from "../../shared/constants/appConstants";
+import {
+	WorkerRequest,
+	WorkerResponse,
+} from "../../shared/types/integrated-worker";
+import {
+	VectorItem,
+	SearchOptions,
+	ChunkInfo,
+	SimilarityResultItem,
+} from "../../core/storage/types";
+
+// PGlite関連のインポート
+import { PGlite, Transaction } from "@electric-sql/pglite";
+import { IdbFs } from "@electric-sql/pglite";
+import { IDBPDatabase, openDB } from "idb";
+import { SQL_QUERIES } from "../storage/pglite/sql-queries";
+
 function nmtNormalize(text: string): string {
 	let normalizedText = text;
 
@@ -32,33 +60,6 @@ function nmtNormalize(text: string): string {
 
 	return normalizedText;
 }
-import { matmul } from "@huggingface/transformers";
-import type {
-	PreTrainedModelType,
-	PreTrainedTokenizerType,
-	TensorType,
-} from "../../shared/types/huggingface";
-import {
-	EMBEDDINGS_DIMENSIONS,
-	DB_NAME,
-	EMBEDDINGS_TABLE_NAME,
-} from "../../shared/constants/appConstants";
-import {
-	WorkerRequest,
-	WorkerResponse,
-} from "../../shared/types/integrated-worker";
-import {
-	VectorItem,
-	SearchOptions,
-	ChunkInfo,
-	SimilarityResultItem,
-} from "../../core/storage/types";
-
-// PGlite関連のインポート
-import { PGlite, Transaction } from "@electric-sql/pglite";
-import { IdbFs } from "@electric-sql/pglite";
-import { IDBPDatabase, openDB } from "idb";
-import { SQL_QUERIES } from "../storage/pglite/sql-queries";
 
 // PGlite関連の定数
 const PGLITE_VERSION = "0.2.14";
@@ -214,7 +215,6 @@ function quoteIdentifier(identifier: string): string {
 	return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-// 初期化関数
 async function initialize(): Promise<boolean> {
 	if (isInitialized || isInitializing) {
 		postLogMessage(
@@ -470,34 +470,6 @@ async function testSelfSimilarity(): Promise<string> {
 	}
 }
 
-async function deleteExistingRecords(
-	tx: Transaction,
-	items: VectorItem[],
-	batchSize: number
-): Promise<void> {
-	const filePathsToDelete = [...new Set(items.map((item) => item.filePath))];
-	const quotedTableName = quoteIdentifier(EMBEDDINGS_TABLE_NAME);
-
-	for (let i = 0; i < filePathsToDelete.length; i += batchSize) {
-		const batchFilePaths = filePathsToDelete.slice(i, i + batchSize);
-		if (batchFilePaths.length === 0) continue;
-
-		const placeholders = batchFilePaths
-			.map((_, idx) => `$${idx + 1}`)
-			.join(", ");
-
-		await tx.query(
-			`DELETE FROM ${quotedTableName} WHERE file_path IN (${placeholders})`,
-			batchFilePaths
-		);
-
-		postLogMessage(
-			"verbose",
-			`Deleted vectors for ${batchFilePaths.length} files from ${EMBEDDINGS_TABLE_NAME}`
-		);
-	}
-}
-
 async function batchInsertRecords(
 	tx: Transaction,
 	items: VectorItem[],
@@ -658,7 +630,6 @@ async function rebuildDatabaseInternal(): Promise<void> {
 	}
 }
 
-// メッセージハンドラー
 worker.onmessage = async (event: MessageEvent) => {
 	const request = event.data as WorkerRequest;
 	const { id, type, payload } = request;
