@@ -1,5 +1,4 @@
-// main.ts
-import { Plugin, Notice, App } from "obsidian";
+import { Plugin, Notice, App, TFile, CachedMetadata } from "obsidian";
 import { LoggerService } from "./shared/services/LoggerService";
 import { CommandHandler } from "./commands";
 import { deleteDB } from "idb";
@@ -32,6 +31,14 @@ export default class MyVectorPlugin extends Plugin {
 	textChunker: TextChunker | null = null;
 	logger: LoggerService | null = null;
 
+	private fileChangeTimers: Map<string, NodeJS.Timeout> = new Map();
+	private readonly DEBOUNCE_DELAY = 2500;
+	private boundHandleFileChange!: (
+		file: TFile,
+		data: string,
+		cache: CachedMetadata
+	) => void;
+	private boundHandleFileDelete!: (file: TFile) => void;
 	async onload() {
 		this.settings = Object.assign(
 			{},
@@ -47,9 +54,6 @@ export default class MyVectorPlugin extends Plugin {
 				this.logger.verbose_log(
 					"Obsidian layout ready. Triggering background initialization."
 				);
-			// initializationPromise は initializeResources() が初めて呼ばれたときに設定される
-			// initializeResources() は ensureResourcesInitialized() から呼ばれるか、
-			// ここで直接呼ぶこともできるが、ensureResourcesInitialized() に任せるのが自然。ただし、ユーザー操作なしに自動で初期化を開始したい場合はここで呼ぶ。
 			this.initializationPromise = this.initializeResources().catch(
 				(error) => {
 					console.error(
@@ -63,6 +67,16 @@ export default class MyVectorPlugin extends Plugin {
 				}
 			);
 		});
+
+		this.boundHandleFileChange = this.handleFileChange.bind(this);
+		this.boundHandleFileDelete = this.handleFileDelete.bind(this);
+
+		this.registerEvent(
+			this.app.metadataCache.on("changed", this.boundHandleFileChange)
+		);
+		this.registerEvent(
+			this.app.metadataCache.on("deleted", this.boundHandleFileDelete)
+		);
 
 		this.addCommand({
 			id: "vectorize-all-notes",
@@ -194,6 +208,121 @@ export default class MyVectorPlugin extends Plugin {
 				}).open();
 			},
 		});
+	}
+
+	async handleFileChange(file: TFile, data: string, cache: CachedMetadata) {
+		if (!(file instanceof TFile && file.extension === "md")) {
+			return; // Only process markdown files
+		}
+
+		if (this.logger)
+			this.logger.verbose_log(`File changed detected: ${file.path}`);
+
+		if (this.fileChangeTimers.has(file.path)) {
+			clearTimeout(this.fileChangeTimers.get(file.path)!);
+		}
+
+		this.fileChangeTimers.set(
+			file.path,
+			setTimeout(async () => {
+				this.fileChangeTimers.delete(file.path);
+				if (this.logger)
+					this.logger.log(
+						`Processing debounced file change for: ${file.path}`
+					);
+
+				try {
+					await this.ensureResourcesInitialized(); // Ensure services are ready
+					if (!this.vectorizationService) {
+						this.logger?.error(
+							"Vectorization service not ready in handleFileChange for: " +
+								file.path
+						);
+						new Notice(
+							"Vectorization service not ready. Cannot update file vectors."
+						);
+						return;
+					}
+
+					// It's good practice to re-read the content here, as `data` might be stale
+					// if multiple 'changed' events fired quickly before debouncing.
+					const currentContent = await this.app.vault.cachedRead(
+						file
+					);
+					const { vectorsProcessed, vectorsDeleted } =
+						await this.vectorizationService.vectorizeSingleFile(
+							file,
+							currentContent
+						);
+
+					if (vectorsProcessed > 0 || vectorsDeleted > 0) {
+						const message = `Updated vectors for ${file.basename}. New: ${vectorsProcessed}, Removed: ${vectorsDeleted}.`;
+						this.logger?.log(message);
+						// Optionally, show a less intrusive notice or none at all for background updates
+						// new Notice(message, 3000);
+					} else {
+						this.logger?.verbose_log(
+							`No vector changes for ${file.path} after update.`
+						);
+					}
+				} catch (error) {
+					console.error(
+						`Error processing file change for ${file.path}:`,
+						error
+					);
+					new Notice(
+						`Failed to update vectors for ${file.basename}. Check console.`
+					);
+				}
+			}, this.DEBOUNCE_DELAY)
+		);
+	}
+
+	async handleFileDelete(file: TFile) {
+		if (!(file instanceof TFile && file.extension === "md")) {
+			return; // Only process markdown files
+		}
+
+		if (this.logger) this.logger.log(`File deleted detected: ${file.path}`);
+
+		if (this.fileChangeTimers.has(file.path)) {
+			clearTimeout(this.fileChangeTimers.get(file.path)!);
+			this.fileChangeTimers.delete(file.path);
+		}
+
+		try {
+			await this.ensureResourcesInitialized();
+			if (!this.vectorizationService) {
+				this.logger?.error(
+					"Vectorization service not ready in handleFileDelete for: " +
+						file.path
+				);
+				new Notice(
+					"Vectorization service not ready. Cannot remove file vectors."
+				);
+				return;
+			}
+
+			const deletedCount =
+				await this.vectorizationService.deleteVectorsForFile(file.path);
+			if (deletedCount > 0) {
+				const message = `Removed ${deletedCount} vectors for deleted file ${file.basename}.`;
+				this.logger?.log(message);
+				// new Notice(message, 3000);
+			} else {
+				this.logger?.verbose_log(
+					`No vectors found to delete for ${file.path}.`
+				);
+			}
+		} catch (error) {
+			console.error(
+				`Error processing file deletion for ${file.path}:`,
+				error
+			);
+			new Notice(
+				`Failed to remove vectors for ${file.basename}. Check console.`
+			);
+		}
 	}
 
 	async ensureResourcesInitialized(): Promise<void> {
@@ -383,7 +512,7 @@ export default class MyVectorPlugin extends Plugin {
 	async onunload() {
 		if (this.logger) this.logger.verbose_log("Unloading vector plugin...");
 
-		// 統合ワーカープロキシの終了
+		// Terminate worker and clear services
 		if (this.proxy) {
 			if (this.logger)
 				this.logger.verbose_log("Terminating integrated worker...");
@@ -398,6 +527,14 @@ export default class MyVectorPlugin extends Plugin {
 		this.storageManagementService = null;
 		this.initializationPromise = null;
 		this.proxy = null;
+
+		this.fileChangeTimers.forEach((timer) => clearTimeout(timer));
+		this.fileChangeTimers.clear();
+		if (this.logger)
+			this.logger.verbose_log(
+				"Cleared all file change debounce timers during unload."
+			);
+
 		this.logger = null;
 	}
 
@@ -413,6 +550,12 @@ export default class MyVectorPlugin extends Plugin {
 			this.logger.log(
 				`Attempting to delete resources (discardDbOnly: ${discardDbOnly})...`
 			);
+
+		this.fileChangeTimers.forEach((timer) => clearTimeout(timer));
+		this.fileChangeTimers.clear();
+		this.logger?.verbose_log(
+			"Cleared active file change debounce timers during resource clearing."
+		);
 
 		if (this.proxy) {
 			try {

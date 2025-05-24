@@ -141,4 +141,84 @@ export class VectorizationService {
 		}
 		return { totalVectorsProcessed };
 	}
+
+	public async vectorizeSingleFile(
+		file: TFile,
+		contentToProcess?: string
+	): Promise<{ vectorsProcessed: number; vectorsDeleted: number }> {
+		this.logger?.log(`Vectorizing single file: ${file.path}`);
+
+		const vectorsDeleted = await this.deleteVectorsForFile(file.path);
+		let vectorsProcessed = 0;
+
+		const currentContent =
+			contentToProcess ?? (await this.app.vault.cachedRead(file));
+
+		if (!currentContent.trim()) {
+			this.logger?.verbose_log(
+				`Skipping empty file or file became empty: ${file.path}. Vectors deleted: ${vectorsDeleted}`
+			);
+			return { vectorsProcessed, vectorsDeleted };
+		}
+
+		const chunkInfosFromTextChunker = this.textChunker.chunkText(
+			currentContent,
+			file.path
+		);
+
+		if (chunkInfosFromTextChunker.length === 0) {
+			this.logger?.verbose_log(
+				`No chunks generated for file: ${file.path} during update. Existing vectors (if any) were deleted: ${vectorsDeleted}`
+			);
+			return { vectorsProcessed, vectorsDeleted };
+		}
+
+		const chunksToStore: ChunkInfo[] = chunkInfosFromTextChunker.map(
+			(chunk) => ({
+				filePath: file.path,
+				chunkOffsetStart: chunk.metadata.startPosition,
+				chunkOffsetEnd: chunk.metadata.endPosition,
+				text: chunk.chunk,
+			})
+		);
+
+		try {
+			const result = await this.workerProxy.vectorizeAndStoreChunks(
+				chunksToStore
+			);
+			vectorsProcessed = result.count;
+			this.logger?.verbose_log(
+				`File ${file.path} processed. Upserted ${vectorsProcessed} vectors. Previously deleted: ${vectorsDeleted}`
+			);
+		} catch (error) {
+			this.logger?.error(
+				`Error vectorizing and storing chunks for ${file.path}:`,
+				error
+			);
+			throw error;
+		}
+
+		return { vectorsProcessed, vectorsDeleted };
+	}
+
+	public async deleteVectorsForFile(filePath: string): Promise<number> {
+		try {
+			this.logger?.verbose_log(
+				`Requesting deletion of vectors for file: ${filePath}`
+			);
+			const deletedCount = await this.workerProxy.deleteVectorsByFilePath(
+				filePath
+			);
+			this.logger?.verbose_log(
+				`Deleted ${deletedCount} vectors for file: ${filePath}`
+			);
+			return deletedCount;
+		} catch (error) {
+			this.logger?.error(
+				`Error deleting vectors for file ${filePath}:`,
+				error
+			);
+			throw error;
+		}
+	}
 }

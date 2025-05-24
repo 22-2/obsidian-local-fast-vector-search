@@ -748,7 +748,6 @@ worker.onmessage = async (event: MessageEvent) => {
 					payload: testResult,
 				});
 				break;
-
 			case "closeDb":
 				await closeDatabase();
 				postMessage({
@@ -756,6 +755,30 @@ worker.onmessage = async (event: MessageEvent) => {
 					type: "dbClosedResponse",
 					payload: true,
 				});
+				break;
+			case "deleteVectorsByFilePath":
+				if (!isDbInitialized) {
+					throw new Error(
+						"DB not initialized for deleteVectorsByFilePath."
+					);
+				}
+				if (typeof payload.filePath !== "string") {
+					throw new Error(
+						"Invalid filePath for deleteVectorsByFilePath command."
+					);
+				}
+				const deleteFilePath = payload.filePath as string;
+				const deleteResult = await pgliteInstance!.query(
+					`DELETE FROM ${quoteIdentifier(
+						EMBEDDINGS_TABLE_NAME
+					)} WHERE file_path = $1`,
+					[deleteFilePath]
+				);
+				postMessage({
+					id,
+					type: "deleteVectorsByFilePathResponse",
+					payload: { count: deleteResult.affectedRows ?? 0 },
+				} as WorkerResponse);
 				break;
 
 			default:

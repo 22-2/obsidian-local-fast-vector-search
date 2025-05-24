@@ -5,6 +5,7 @@ import {
 	VectorizeAndStoreResponse,
 	SearchResult,
 	RebuildDbResponse,
+	DeleteVectorsByFilePathResponse,
 } from "../../shared/types/integrated-worker";
 import IntegratedWorkerCode from "./IntegratedWorker.worker?worker";
 import { ChunkInfo, SearchOptions } from "../../core/storage/types";
@@ -234,11 +235,20 @@ export class IntegratedWorkerProxy {
 			type: "testSimilarity",
 		});
 	}
-
 	async closeDatabase(): Promise<boolean> {
 		return this.sendRequest({
 			type: "closeDb",
 		});
+	}
+
+	async deleteVectorsByFilePath(filePath: string): Promise<number> {
+		const response = await this.sendRequest<
+			DeleteVectorsByFilePathResponse["payload"]
+		>({
+			type: "deleteVectorsByFilePath",
+			payload: { filePath },
+		});
+		return response.count;
 	}
 
 	// プラグインアンロード時に Worker を終了

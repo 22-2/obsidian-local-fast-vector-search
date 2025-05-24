@@ -1,5 +1,3 @@
-// 統合ワーカーの型定義
-
 // ===== Base Types =====
 export interface BaseRequest {
 	id: string;
@@ -66,7 +64,13 @@ export interface CloseDbRequest extends BaseRequest {
 	payload?: any;
 }
 
-// ユニオン型でリクエストをまとめる
+export interface DeleteVectorsByFilePathRequest extends BaseRequest {
+	type: "deleteVectorsByFilePath";
+	payload: {
+		filePath: string;
+	};
+}
+
 export type WorkerRequest =
 	| InitializeRequest
 	| VectorizeSentencesRequest
@@ -74,7 +78,8 @@ export type WorkerRequest =
 	| SearchRequest
 	| RebuildDbRequest
 	| TestSimilarityRequest
-	| CloseDbRequest;
+	| CloseDbRequest
+	| DeleteVectorsByFilePathRequest;
 
 // ===== Response Types =====
 export interface InitializedResponse extends BaseResponse {
@@ -114,6 +119,13 @@ export interface DbClosedResponse extends BaseResponse {
 	payload: boolean;
 }
 
+export interface DeleteVectorsByFilePathResponse extends BaseResponse {
+	type: "deleteVectorsByFilePathResponse";
+	payload: {
+		count: number;
+	};
+}
+
 export interface ErrorResponse extends BaseResponse {
 	type: "errorResponse";
 	payload: string;
@@ -133,7 +145,6 @@ export interface ProgressResponse extends BaseResponse {
 	payload: any;
 }
 
-// ユニオン型でレスポンスをまとめる
 export type WorkerResponse =
 	| InitializedResponse
 	| VectorizeSentencesResponse
@@ -142,6 +153,7 @@ export type WorkerResponse =
 	| RebuildDbResponse
 	| TestSimilarityResponse
 	| DbClosedResponse
+	| DeleteVectorsByFilePathResponse
 	| ErrorResponse
 	| StatusResponse
 	| ProgressResponse;
