@@ -85,6 +85,11 @@ export class CommandHandler {
 			"Rebuilding all indexes... This may take a while."
 		);
 		try {
+			this.notificationService.updateNotice(
+				rebuildStatusNoticeId,
+				"Clearing existing storage...",
+				0
+			);
 			await this.storageManagementService.rebuildStorage(
 				(message: string) => {
 					this.notificationService.updateNotice(
@@ -97,12 +102,40 @@ export class CommandHandler {
 
 			this.notificationService.updateNotice(
 				rebuildStatusNoticeId,
-				"Storage cleared. Re-vectorizing all notes...",
+				"Re-vectorizing all notes for bulk load...",
 				0
 			);
-			this.notificationService.hideNotice(rebuildStatusNoticeId);
-			await this.vectorizeAllNotes();
+			const { totalVectorsProcessed } =
+				await this.vectorizationService.vectorizeAllNotes(
+					(message: string, isOverallProgress?: boolean) => {
+						this.notificationService.updateNotice(
+							rebuildStatusNoticeId,
+							message,
+							0
+						);
+					}
+				);
 
+			this.notificationService.updateNotice(
+				rebuildStatusNoticeId,
+				`Bulk load complete (${totalVectorsProcessed} vectors). Creating database indexes... This may take some time.`,
+				0
+			);
+			await this.storageManagementService.ensureIndexes(
+				(message: string) => {
+					this.notificationService.updateNotice(
+						rebuildStatusNoticeId,
+						message,
+						0
+					);
+				}
+			);
+
+			this.notificationService.updateNotice(
+				rebuildStatusNoticeId,
+				"Index rebuild process completed successfully!",
+				5000
+			);
 			console.log("Index rebuild process completed successfully.");
 		} catch (error: any) {
 			console.error("Failed to rebuild all indexes:", error);

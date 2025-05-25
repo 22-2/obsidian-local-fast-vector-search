@@ -81,49 +81,48 @@ export class VectorizationService {
 			}
 		}
 
-		// バッチ処理で全チャンクをWorkerに送信
-		const WORKER_BATCH_SIZE = 200; // バッチあたりのチャンク数
-
+		const WORKER_BULK_BATCH_SIZE = 200;
+		const WORKER_BATCH_SIZE = 200;
 		if (allChunksToProcess.length > 0) {
 			if (onProgress)
 				onProgress(
-					`Collected ${allChunksToProcess.length} chunks. Starting vectorization and storage in batches...`,
+					`Collected ${allChunksToProcess.length} chunks. Starting bulk vectorization and storage...`,
 					true
 				);
 
 			for (
 				let i = 0;
 				i < allChunksToProcess.length;
-				i += WORKER_BATCH_SIZE
+				i += WORKER_BULK_BATCH_SIZE
 			) {
 				const batchChunks = allChunksToProcess.slice(
 					i,
-					i + WORKER_BATCH_SIZE
+					i + WORKER_BULK_BATCH_SIZE
 				);
-				const currentBatchNum = Math.floor(i / WORKER_BATCH_SIZE) + 1;
+				const currentBatchNum =
+					Math.floor(i / WORKER_BULK_BATCH_SIZE) + 1;
 				const totalBatches = Math.ceil(
-					allChunksToProcess.length / WORKER_BATCH_SIZE
+					allChunksToProcess.length / WORKER_BULK_BATCH_SIZE
 				);
 
 				if (onProgress) {
 					onProgress(
-						`Processing batch ${currentBatchNum}/${totalBatches} (${batchChunks.length} chunks)...`,
+						`Processing bulk batch ${currentBatchNum}/${totalBatches} (${batchChunks.length} chunks)...`,
 						true
 					);
 				}
 
 				try {
-					const result =
-						await this.workerProxy.vectorizeAndStoreChunks(
-							batchChunks
-						);
+					const result = await this.workerProxy.bulkVectorizeAndLoad(
+						batchChunks
+					);
 					totalVectorsProcessed += result.count;
 					this.logger?.verbose_log(
-						`Batch ${currentBatchNum}/${totalBatches} processed. Upserted ${result.count} vectors. Total processed: ${totalVectorsProcessed}`
+						`Bulk Batch ${currentBatchNum}/${totalBatches} processed. Loaded ${result.count} vectors. Total processed: ${totalVectorsProcessed}`
 					);
 				} catch (batchError) {
 					this.logger?.error(
-						`Error processing batch ${currentBatchNum}/${totalBatches} (starting at index ${i}):`,
+						`Error processing bulk batch ${currentBatchNum}/${totalBatches} (starting at index ${i}):`,
 						batchError
 					);
 					// エラーが発生した場合、処理を中断してエラーを伝播させる

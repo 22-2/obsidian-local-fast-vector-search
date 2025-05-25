@@ -308,17 +308,6 @@ async function initialize(): Promise<boolean> {
 		await pgliteInstance.exec(createTableSql);
 		postLogMessage("info", `Table ${tableName} ensured.`);
 
-		const indexName = `${tableName}_hnsw_idx`;
-		const createIndexSql = SQL_QUERIES.CREATE_HNSW_INDEX.replace(
-			"$1",
-			quoteIdentifier(indexName)
-		).replace("$2", quoteIdentifier(tableName));
-		await pgliteInstance.exec(createIndexSql);
-		postLogMessage(
-			"info",
-			`Index ${indexName} for table ${tableName} ensured.`
-		);
-
 		isDbInitialized = true;
 
 		isInitialized = true;
@@ -618,35 +607,155 @@ async function rebuildDatabaseInternal(): Promise<void> {
 		);
 		postLogMessage("info", `Dropped existing table ${tableName}.`);
 
-		// スキーマ設定ロジックを再実行
 		await pgliteInstance.exec(SQL_QUERIES.SET_ENVIRONMENT);
 		postLogMessage("info", "Database environment set.");
-
-		await pgliteInstance.exec(SQL_QUERIES.CREATE_EXTENSION);
-		postLogMessage("info", "Vector extension ensured.");
 
 		const createTableSql = SQL_QUERIES.CREATE_TABLE.replace(
 			"$1",
 			quoteIdentifier(tableName)
 		).replace("$2", dimensions.toString());
 		await pgliteInstance.exec(createTableSql);
-		postLogMessage("info", `Table ${tableName} ensured.`);
+		postLogMessage("info", `Table ${tableName} ensured (without index).`);
 
-		const indexName = `${tableName}_hnsw_idx`;
-		const createIndexSql = SQL_QUERIES.CREATE_HNSW_INDEX.replace(
-			"$1",
-			quoteIdentifier(indexName)
-		).replace("$2", quoteIdentifier(tableName));
-		await pgliteInstance.exec(createIndexSql);
+		// DO NOT CREATE INDEX HERE
 		postLogMessage(
 			"info",
-			`Index ${indexName} for table ${tableName} ensured.`
+			"Database table rebuild (without index) completed successfully."
 		);
-
-		postLogMessage("info", "Database rebuild completed successfully.");
 	} catch (error) {
-		postLogMessage("error", "Error rebuilding database:", error);
+		postLogMessage("error", "Error rebuilding database table:", error);
 		throw error;
+	}
+}
+
+async function handleBulkVectorizeAndLoad(
+	chunksToProcess: ChunkInfo[]
+): Promise<{ count: number }> {
+	if (!isInitialized || !model || !tokenizer || !Tensor || !pgliteInstance) {
+		throw new Error(
+			"Worker or PGlite not fully initialized for bulk load."
+		);
+	}
+	if (chunksToProcess.length === 0) {
+		return { count: 0 };
+	}
+
+	const PROCESSING_BATCH_SIZE = 100;
+	let totalProcessedCount = 0;
+
+	try {
+		await pgliteInstance.transaction(async (tx) => {
+			const tableName = quoteIdentifier(EMBEDDINGS_TABLE_NAME);
+
+			for (
+				let i = 0;
+				i < chunksToProcess.length;
+				i += PROCESSING_BATCH_SIZE
+			) {
+				const currentChunkBatch = chunksToProcess.slice(
+					i,
+					i + PROCESSING_BATCH_SIZE
+				);
+				if (currentChunkBatch.length === 0) continue;
+
+				postLogMessage(
+					"verbose",
+					`Vectorizing batch of ${currentChunkBatch.length} chunks (offset ${i})...`
+				);
+				const sentencesToVectorize = currentChunkBatch.map(
+					(chunk) => chunk.text
+				);
+				const vectors = await vectorizeSentences(sentencesToVectorize);
+
+				postLogMessage(
+					"verbose",
+					`Inserting batch of ${vectors.length} vectors into DB...`
+				);
+
+				const valuePlaceholders: string[] = [];
+				const params: (string | number | null)[] = [];
+				let paramIndex = 1;
+
+				for (let j = 0; j < currentChunkBatch.length; j++) {
+					valuePlaceholders.push(
+						`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`
+					);
+					params.push(
+						currentChunkBatch[j].filePath,
+						currentChunkBatch[j].chunkOffsetStart,
+						currentChunkBatch[j].chunkOffsetEnd,
+						JSON.stringify(vectors[j])
+					);
+				}
+
+				if (valuePlaceholders.length > 0) {
+					const insertSql = `INSERT INTO ${tableName} (file_path, chunk_offset_start, chunk_offset_end, embedding) VALUES ${valuePlaceholders.join(
+						", "
+					)}`;
+					await tx.query(insertSql, params);
+					totalProcessedCount += currentChunkBatch.length;
+					postLogMessage(
+						"verbose",
+						`Inserted ${currentChunkBatch.length} vectors. Total processed in transaction: ${totalProcessedCount}`
+					);
+				}
+			}
+		});
+
+		postLogMessage(
+			"info",
+			`Successfully bulk loaded ${totalProcessedCount} vectors.`
+		);
+		return { count: totalProcessedCount };
+	} catch (error) {
+		const errorDetails =
+			error instanceof Error
+				? {
+						message: error.message,
+						stack: error.stack,
+						name: error.name,
+				  }
+				: error;
+		postLogMessage("error", "Error during bulk vector load:", errorDetails);
+		throw error;
+	}
+}
+
+async function handleEnsureIndexes(): Promise<{
+	success: boolean;
+	message?: string;
+}> {
+	if (!pgliteInstance) {
+		throw new Error(
+			"PGlite instance not initialized for ensuring indexes."
+		);
+	}
+	const tableName = EMBEDDINGS_TABLE_NAME;
+	const indexName = `${tableName}_hnsw_idx`;
+	const quotedTableName = quoteIdentifier(tableName);
+	const quotedIndexName = quoteIdentifier(indexName);
+
+	try {
+		postLogMessage(
+			"info",
+			`Creating HNSW index ${indexName} on ${tableName}... This may take a while.`
+		);
+		const createIndexSql = SQL_QUERIES.CREATE_HNSW_INDEX.replace(
+			"$1",
+			quotedIndexName
+		).replace("$2", quotedTableName);
+		await pgliteInstance.exec(createIndexSql);
+		postLogMessage("info", `Index ${indexName} created successfully.`);
+		return {
+			success: true,
+			message: `Index ${indexName} created successfully.`,
+		};
+	} catch (error: any) {
+		postLogMessage("error", `Failed to create index ${indexName}:`, error);
+		return {
+			success: false,
+			message: `Failed to create index ${indexName}: ${error.message}`,
+		};
 	}
 }
 
@@ -685,7 +794,6 @@ worker.onmessage = async (event: MessageEvent) => {
 					id,
 				});
 				break;
-
 			case "vectorizeAndStore":
 				if (!isInitialized || !isDbInitialized) {
 					throw new Error(
@@ -697,29 +805,50 @@ worker.onmessage = async (event: MessageEvent) => {
 						"Invalid payload for vectorizeAndStore command."
 					);
 				}
-				const chunksToVectorize = payload.chunks as ChunkInfo[];
-				const sentencesToVectorize = chunksToVectorize.map(
-					(chunk) => chunk.text
+				const chunksToUpsert = payload.chunks as ChunkInfo[];
+				const sentencesToVecUpsert = chunksToUpsert.map((c) => c.text);
+				const upsertVectorsArr = await vectorizeSentences(
+					sentencesToVecUpsert
 				);
-				const vectorizedResults = await vectorizeSentences(
-					sentencesToVectorize
-				);
-
-				const vectorItems: VectorItem[] = chunksToVectorize.map(
+				const vectorItemsForUpsert: VectorItem[] = chunksToUpsert.map(
 					(chunk, index) => ({
 						filePath: chunk.filePath,
 						chunkOffsetStart: chunk.chunkOffsetStart,
 						chunkOffsetEnd: chunk.chunkOffsetEnd,
-						vector: vectorizedResults[index],
-						// chunk: chunk.text, // <- この行を削除
+						vector: upsertVectorsArr[index],
 					})
 				);
-				await upsertVectors(vectorItems);
+				await upsertVectors(vectorItemsForUpsert);
 				postMessage({
 					type: "vectorizeAndStoreResponse",
-					payload: { count: vectorItems.length },
+					payload: { count: vectorItemsForUpsert.length },
 					id,
 				});
+				break;
+
+			case "bulkVectorizeAndLoad":
+				if (!Array.isArray(payload.chunks)) {
+					throw new Error(
+						"Invalid payload for bulkVectorizeAndLoad command."
+					);
+				}
+				const bulkResult = await handleBulkVectorizeAndLoad(
+					payload.chunks as ChunkInfo[]
+				);
+				postMessage({
+					type: "bulkVectorizeAndLoadResponse",
+					payload: bulkResult,
+					id,
+				} as WorkerResponse);
+				break;
+
+			case "ensureIndexes":
+				const indexResult = await handleEnsureIndexes();
+				postMessage({
+					type: "ensureIndexesResponse",
+					payload: indexResult,
+					id,
+				} as WorkerResponse);
 				break;
 
 			case "search":

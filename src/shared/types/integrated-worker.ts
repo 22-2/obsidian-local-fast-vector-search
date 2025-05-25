@@ -38,6 +38,13 @@ export interface VectorizeAndStoreRequest extends BaseRequest {
 	};
 }
 
+export interface BulkVectorizeAndLoadRequest extends BaseRequest {
+	type: "bulkVectorizeAndLoad";
+	payload: {
+		chunks: ChunkInfo[];
+	};
+}
+
 export interface SearchRequest extends BaseRequest {
 	type: "search";
 	payload: {
@@ -53,6 +60,11 @@ export interface RebuildDbRequest extends BaseRequest {
 	payload?: {
 		clearExisting?: boolean;
 	};
+}
+
+export interface EnsureIndexesRequest extends BaseRequest {
+	type: "ensureIndexes";
+	payload?: {};
 }
 
 export interface TestSimilarityRequest extends BaseRequest {
@@ -80,7 +92,9 @@ export type WorkerRequest =
 	| RebuildDbRequest
 	| TestSimilarityRequest
 	| CloseDbRequest
-	| DeleteVectorsByFilePathRequest;
+	| DeleteVectorsByFilePathRequest
+	| BulkVectorizeAndLoadRequest
+	| EnsureIndexesRequest;
 
 // ===== Response Types =====
 export interface InitializedResponse extends BaseResponse {
@@ -100,6 +114,13 @@ export interface VectorizeAndStoreResponse extends BaseResponse {
 	};
 }
 
+export interface BulkVectorizeAndLoadResponse extends BaseResponse {
+	type: "bulkVectorizeAndLoadResponse";
+	payload: {
+		count: number;
+	};
+}
+
 export interface SearchResult extends BaseResponse {
 	type: "searchResult";
 	payload: SimilarityResultItem[];
@@ -108,6 +129,14 @@ export interface SearchResult extends BaseResponse {
 export interface RebuildDbResponse extends BaseResponse {
 	type: "rebuildDbResponse";
 	payload: boolean;
+}
+
+export interface EnsureIndexesResponse extends BaseResponse {
+	type: "ensureIndexesResponse";
+	payload: {
+		success: boolean;
+		message?: string;
+	};
 }
 
 export interface TestSimilarityResponse extends BaseResponse {
@@ -157,4 +186,6 @@ export type WorkerResponse =
 	| DeleteVectorsByFilePathResponse
 	| ErrorResponse
 	| StatusResponse
-	| ProgressResponse;
+	| ProgressResponse
+	| BulkVectorizeAndLoadResponse
+	| EnsureIndexesResponse;

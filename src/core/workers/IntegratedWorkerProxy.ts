@@ -6,6 +6,8 @@ import {
 	SearchResult,
 	RebuildDbResponse,
 	DeleteVectorsByFilePathResponse,
+	BulkVectorizeAndLoadResponse,
+	EnsureIndexesResponse,
 } from "../../shared/types/integrated-worker";
 import IntegratedWorkerCode from "./IntegratedWorker.worker?worker";
 import { ChunkInfo, SearchOptions } from "../../core/storage/types";
@@ -236,6 +238,7 @@ export class IntegratedWorkerProxy {
 			type: "testSimilarity",
 		});
 	}
+
 	async closeDatabase(): Promise<boolean> {
 		return this.sendRequest({
 			type: "closeDb",
@@ -250,6 +253,21 @@ export class IntegratedWorkerProxy {
 			payload: { filePath },
 		});
 		return response.count;
+	}
+
+	async bulkVectorizeAndLoad(
+		chunks: ChunkInfo[]
+	): Promise<BulkVectorizeAndLoadResponse["payload"]> {
+		return this.sendRequest({
+			type: "bulkVectorizeAndLoad",
+			payload: { chunks },
+		});
+	}
+
+	async ensureIndexes(): Promise<EnsureIndexesResponse["payload"]> {
+		return this.sendRequest({
+			type: "ensureIndexes",
+		});
 	}
 
 	// プラグインアンロード時に Worker を終了
