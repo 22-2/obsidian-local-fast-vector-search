@@ -1,6 +1,6 @@
 export const SQL_QUERIES = {
 	CHECK_TABLE_EXISTS: `SELECT EXISTS (SELECT FROM pg_tables WHERE tablename = $1)`,
-	SET_ENVIRONMENT: `SET max_parallel_maintenance_workers = 8`,
+	SET_ENVIRONMENT: `SET max_parallel_maintenance_workers = 16`,
 	CHECK_COLUMN_EXISTS: `SELECT EXISTS (
 		SELECT 1
 		FROM information_schema.columns
@@ -22,7 +22,6 @@ export const SQL_QUERIES = {
 			file_path TEXT NOT NULL,
 			chunk_offset_start INTEGER,
 			chunk_offset_end INTEGER,
-			chunk TEXT,
 			embedding halfvec($2),
 			UNIQUE (file_path, chunk_offset_start)
 		)
@@ -31,8 +30,8 @@ export const SQL_QUERIES = {
 		CREATE INDEX IF NOT EXISTS $1
 		ON $2 USING hnsw (embedding halfvec_cosine_ops)
 		WITH (
-			m = 8,
-			ef_construction = 64
+			m = 5,
+			ef_construction = 400
 		)
 	`,
 };

@@ -482,31 +482,29 @@ async function batchInsertRecords(
 		if (batchItems.length === 0) continue;
 
 		const valuePlaceholders: string[] = [];
-		const params: (string | number | string | null)[] = [];
+		const params: (string | number | null)[] = [];
 		let paramIndex = 1;
 
 		for (const item of batchItems) {
 			valuePlaceholders.push(
-				`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`
+				`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`
 			);
 			params.push(
 				item.filePath,
 				item.chunkOffsetStart,
 				item.chunkOffsetEnd,
-				JSON.stringify(item.vector),
-				item.chunk // VectorItemのchunkプロパティを使用
+				JSON.stringify(item.vector)
 			);
 		}
 
 		if (valuePlaceholders.length > 0) {
 			const insertSql = `
 				INSERT INTO ${quotedTableName} 
-				(file_path, chunk_offset_start, chunk_offset_end, embedding, chunk)
+				(file_path, chunk_offset_start, chunk_offset_end, embedding)
 				VALUES ${valuePlaceholders.join(", ")}
 				ON CONFLICT (file_path, chunk_offset_start) DO UPDATE SET
 					chunk_offset_end = EXCLUDED.chunk_offset_end,
-					embedding = EXCLUDED.embedding,
-					chunk = EXCLUDED.chunk
+					embedding = EXCLUDED.embedding
 				`;
 			await tx.query(insertSql, params);
 			postLogMessage(
@@ -519,7 +517,7 @@ async function batchInsertRecords(
 
 async function upsertVectors(
 	items: VectorItem[],
-	batchSize: number = 100
+	batchSize: number = 200
 ): Promise<void> {
 	if (!pgliteInstance) {
 		throw new Error("PGlite instance is not initialized.");
@@ -565,9 +563,10 @@ async function searchSimilar(
 		await pgliteInstance.query(`SET hnsw.ef_search = ${efSearch}`);
 
 		let querySql = `
-			SELECT id, file_path, chunk_offset_start, chunk_offset_end, chunk,
-				 embedding <-> $1 as distance
-				 FROM ${quotedTableName}
+			SELECT id, file_path, chunk_offset_start, chunk_offset_end,
+			       NULL AS chunk, -- chunk カラムの代わりに NULL を返す
+				   embedding <-> $1 as distance
+			FROM ${quotedTableName}
 		`;
 		const queryParams: (string | number | string[])[] = [
 			JSON.stringify(vector),
@@ -712,7 +711,7 @@ worker.onmessage = async (event: MessageEvent) => {
 						chunkOffsetStart: chunk.chunkOffsetStart,
 						chunkOffsetEnd: chunk.chunkOffsetEnd,
 						vector: vectorizedResults[index],
-						chunk: chunk.text,
+						// chunk: chunk.text, // <- この行を削除
 					})
 				);
 				await upsertVectors(vectorItems);

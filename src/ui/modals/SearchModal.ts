@@ -161,7 +161,30 @@ export class SearchModal extends SuggestModal<SimilarityResultItem> {
 		}
 	}
 
-	renderSuggestion(result: SimilarityResultItem, el: HTMLElement) {
+	// ファイルから位置情報を使ってテキストを抽出するメソッド
+	private async extractTextFromPosition(
+		filePath: string,
+		startPosition: number,
+		endPosition: number
+	): Promise<string> {
+		try {
+			const file = this.app.vault.getAbstractFileByPath(filePath);
+			if (!(file instanceof TFile)) {
+				return "ファイルが見つかりません";
+			}
+
+			const content = await this.app.vault.read(file);
+			const extractedText = content.substring(startPosition, endPosition);
+
+			const cleanedText = extractedText.replace(/\n/g, " ");
+			return cleanedText;
+		} catch (error) {
+			console.error("Error reading file:", error);
+			return "テキストの読み込みエラー";
+		}
+	}
+
+	async renderSuggestion(result: SimilarityResultItem, el: HTMLElement) {
 		el.addClass("vector-search-result-item");
 
 		const file = this.app.vault.getAbstractFileByPath(result.file_path);
@@ -174,11 +197,16 @@ export class SearchModal extends SuggestModal<SimilarityResultItem> {
 			text: `${fileName} (Distance: ${result.distance.toFixed(4)})`,
 			cls: "vector-search-result-link",
 		});
+
+		// 位置情報からテキストを抽出して表示
+		const extractedText = await this.extractTextFromPosition(
+			result.file_path,
+			result.chunk_offset_start || 0,
+			result.chunk_offset_end || 0
+		);
+
 		el.createEl("div", {
-			text: result.chunk
-				? result.chunk.replace(/\n/g, " ").substring(0, 200) +
-				  (result.chunk.length > 200 ? "..." : "")
-				: "",
+			text: extractedText,
 			cls: "vector-search-result-chunk",
 		});
 	}

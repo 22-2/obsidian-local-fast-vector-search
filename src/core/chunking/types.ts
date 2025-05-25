@@ -12,6 +12,6 @@ export interface ChunkInfo {
 }
 
 export interface ChunkingOptions {
-	chunkSize: number; // サイズベースチャンキング時の目標チャンクサイズ（文字数）
-	removeFrontmatter?: boolean; // フロントマターを削除するかどうか
+	maxChunkCharacters: number;
+	removeFrontmatter?: boolean;
 }
