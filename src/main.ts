@@ -1,4 +1,4 @@
-import { Plugin, Notice, App, TFile, CachedMetadata } from "obsidian";
+import { Plugin, Notice, App, TFile, type CachedMetadata } from "obsidian";
 import { LoggerService } from "./shared/services/LoggerService";
 import { CommandHandler } from "./commands";
 import { deleteDB } from "idb";
@@ -13,7 +13,7 @@ import { SearchModal } from "./ui/modals/SearchModal";
 import { DiscardDBModal } from "./ui/modals/DiscardDBModal";
 import { DeleteResourcesModal } from "./ui/modals/DeleteResourcesModal";
 
-import { PluginSettings, DEFAULT_SETTINGS } from "./pluginSettings";
+import { type PluginSettings, DEFAULT_SETTINGS } from "./pluginSettings";
 import { VectorizerSettingTab } from "./ui/settings";
 
 export default class MyVectorPlugin extends Plugin {

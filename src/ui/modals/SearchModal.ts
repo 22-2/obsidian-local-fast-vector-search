@@ -2,7 +2,7 @@ import { App, SuggestModal, TFile } from "obsidian";
 import { CommandHandler } from "../../commands";
 import type { SimilarityResultItem } from "../../core/storage/types";
 import { NotificationService } from "../../shared/services/NotificationService";
-import { PluginSettings } from "../../pluginSettings";
+import { type PluginSettings } from "../../pluginSettings";
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorState, Prec } from "@codemirror/state";
 import { placeholder } from "@codemirror/view";

@@ -2,7 +2,7 @@ import { App, TFile } from "obsidian";
 import { TextChunker } from "../../core/chunking/TextChunker";
 import { LoggerService } from "../../shared/services/LoggerService";
 import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
-import { ChunkInfo } from "../storage/types";
+import type { ChunkInfo } from "../storage/types";
 
 export class VectorizationService {
 	private logger: LoggerService | null;

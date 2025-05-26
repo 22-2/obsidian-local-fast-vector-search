@@ -1,16 +1,16 @@
 import { LoggerService } from "../../shared/services/LoggerService";
 import {
-	WorkerRequest,
-	WorkerResponse,
-	VectorizeAndStoreResponse,
-	SearchResult,
-	RebuildDbResponse,
-	DeleteVectorsByFilePathResponse,
-	BulkVectorizeAndLoadResponse,
-	EnsureIndexesResponse,
+	type WorkerRequest,
+	type WorkerResponse,
+	type VectorizeAndStoreResponse,
+	type SearchResult,
+	type RebuildDbResponse,
+	type DeleteVectorsByFilePathResponse,
+	type BulkVectorizeAndLoadResponse,
+	type EnsureIndexesResponse,
 } from "../../shared/types/integrated-worker";
 import IntegratedWorkerCode from "./IntegratedWorker.worker?worker";
-import { ChunkInfo, SearchOptions } from "../../core/storage/types";
+import type { ChunkInfo, SearchOptions } from "../../core/storage/types";
 
 export class IntegratedWorkerProxy {
 	private worker: Worker;

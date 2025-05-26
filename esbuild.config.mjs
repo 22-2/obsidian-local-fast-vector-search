@@ -1,5 +1,7 @@
 // esbuild.config.mjs
 import esbuild from "esbuild";
+import esbuildSvelte from 'esbuild-svelte';
+import { sveltePreprocess } from 'svelte-preprocess';
 import process from "process";
 import builtins from "builtin-modules";
 import inlineWorkerPlugin from "esbuild-plugin-inline-worker";
@@ -24,7 +26,13 @@ const context = await esbuild.context({
 		define: {
 			'process': '{}', // web workerでprocessを空オブジェクトに設定する (node.jsと認識されないようにする)
 		},
-	})],
+		
+	}),
+    esbuildSvelte({
+      compilerOptions: { css: 'injected' },
+      preprocess: sveltePreprocess(),
+    }),
+],
 	external: [
 		"obsidian",
 		"electron",

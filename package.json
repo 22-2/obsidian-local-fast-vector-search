@@ -19,9 +19,13 @@
 		"@typescript-eslint/parser": "^8.4.0",
 		"builtin-modules": "^4.0.0",
 		"esbuild": "^0.25.2",
+		"esbuild-svelte": "^0.9.3",
 		"jest": "^29.7.0",
 		"obsidian": "latest",
 		"obsidian-typings": "latest",
+		"svelte": "^5.33.2",
+		"svelte-check": "^4.2.1",
+		"svelte-preprocess": "^6.0.3",
 		"ts-jest": "^29.3.2",
 		"tslib": "^2.6.3",
 		"typescript": "5.7.2"

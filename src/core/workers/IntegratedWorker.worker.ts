@@ -9,11 +9,11 @@ import {
 	DB_NAME,
 	EMBEDDINGS_TABLE_NAME,
 } from "../../shared/constants/appConstants";
-import {
+import type {
 	WorkerRequest,
 	WorkerResponse,
 } from "../../shared/types/integrated-worker";
-import {
+import type {
 	VectorItem,
 	SearchOptions,
 	ChunkInfo,
@@ -21,9 +21,9 @@ import {
 } from "../../core/storage/types";
 
 // PGlite関連のインポート
-import { PGlite, Transaction } from "@electric-sql/pglite";
+import { PGlite, type Transaction } from "@electric-sql/pglite";
 import { IdbFs } from "@electric-sql/pglite";
-import { IDBPDatabase, openDB } from "idb";
+import { type IDBPDatabase, openDB } from "idb";
 import { SQL_QUERIES } from "../storage/pglite/sql-queries";
 
 function nmtNormalize(text: string): string {

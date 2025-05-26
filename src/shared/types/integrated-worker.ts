@@ -25,7 +25,7 @@ export interface VectorizeSentencesRequest extends BaseRequest {
 	};
 }
 
-import {
+import type {
 	ChunkInfo,
 	SearchOptions,
 	SimilarityResultItem,

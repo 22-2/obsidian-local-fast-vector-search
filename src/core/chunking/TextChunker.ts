@@ -1,4 +1,4 @@
-import { ChunkInfo, ChunkingOptions } from "./types";
+import type { ChunkInfo, ChunkingOptions } from "./types";
 
 import {
 	split as splitSentencesInternal,
