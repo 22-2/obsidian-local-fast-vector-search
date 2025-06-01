@@ -33,7 +33,7 @@ export const SQL_QUERIES = {
 	`,
 	CREATE_HNSW_INDEX: `
 		CREATE INDEX IF NOT EXISTS $1
-		ON $2 USING hnsw ((embedding::halfvec(256)) halfvec_cosine_ops)
+		ON $2 USING hnsw (embedding halfvec_cosine_ops)
 		WITH (
 			m = ${HNSW_M},
 			ef_construction = ${HNSW_EF_CONSTRUCTION}
