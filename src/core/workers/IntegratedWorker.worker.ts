@@ -508,7 +508,7 @@ async function batchInsertRecords(
 
 async function upsertVectors(
 	items: VectorItem[],
-	batchSize: number = 200
+	batchSize: number = 100
 ): Promise<void> {
 	if (!pgliteInstance) {
 		throw new Error("PGlite instance is not initialized.");
