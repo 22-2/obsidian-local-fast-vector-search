@@ -15,3 +15,10 @@ export interface ChunkingOptions {
 	maxChunkCharacters: number;
 	removeFrontmatter?: boolean;
 }
+
+export interface Chunk {
+	text: string;
+	originalOffsetStart: number;
+	originalOffsetEnd: number;
+	contributingSegmentIds?: string[];
+}
