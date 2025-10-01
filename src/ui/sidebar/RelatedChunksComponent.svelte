@@ -285,6 +285,22 @@
 		}
 	}
 
+	function handleMouseOver(
+		event: MouseEvent | FocusEvent,
+		filePath: string,
+	): void {
+		const target = event.currentTarget as HTMLElement;
+		if (!target) return;
+
+		plugin.app.workspace.trigger("hover-link", {
+			event,
+			source: "related-chunks-sidebar",
+			hoverParent: target,
+			targetEl: target,
+			linktext: filePath,
+		});
+	}
+
 	function expandFile(filePath: string): void {
 		const chunksToDisplay = allGroupedChunks.get(filePath) || [];
 		displayedChunksInExpandedGroups.set(filePath, []);
@@ -348,6 +364,9 @@
 				class="related-chunks-file-header tree-item-self search-result-file-title"
 				role="button"
 				tabindex="0"
+				onmouseover={(e) => handleMouseOver(e, filePath)}
+				onfocus={(e) => handleMouseOver(e, filePath)}
+				data-href={filePath}
 			>
 				<div
 					class="tree-item-icon collapse-icon"
