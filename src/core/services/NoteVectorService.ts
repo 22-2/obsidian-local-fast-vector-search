@@ -21,7 +21,7 @@ export class NoteVectorService {
 			return null;
 		}
 
-		const chunkInfos = this.textChunker.chunkText(content, file.path);
+		const chunkInfos = await this.textChunker.chunkText(content, file.path);
 		if (chunkInfos.length === 0) {
 			this.logger?.verbose_log(
 				`No chunks generated for note ${file.path}.`

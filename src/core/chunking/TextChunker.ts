@@ -4,7 +4,10 @@ import { MarkdownChunker } from "./MarkdownChunker";
 export class TextChunker {
 	constructor() {}
 
-	public chunkText(noteContent: string, filePath?: string): ChunkInfo[] {
+	public async chunkText(
+		noteContent: string,
+		filePath?: string
+	): Promise<ChunkInfo[]> {
 		const fileName = this.extractTitleFromPath(filePath);
 
 		if (!noteContent.trim()) {
@@ -21,7 +24,9 @@ export class TextChunker {
 				},
 			];
 		}
-		const chunksFromMarkdown = MarkdownChunker.chunkMarkdown(noteContent);
+		const chunksFromMarkdown = await MarkdownChunker.chunkMarkdown(
+			noteContent
+		);
 
 		if (chunksFromMarkdown.length === 0) {
 			// MarkdownChunker がチャンクを返さなかったが、内容は空ではない場合

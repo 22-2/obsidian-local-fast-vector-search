@@ -36,7 +36,7 @@ export class VectorizationService {
 
 			try {
 				const content = await this.app.vault.cachedRead(file);
-				const chunkInfos = this.textChunker.chunkText(
+				const chunkInfos = await this.textChunker.chunkText(
 					content,
 					file.path
 				);
@@ -149,7 +149,7 @@ export class VectorizationService {
 		const currentContent =
 			contentToProcess ?? (await this.app.vault.cachedRead(file));
 
-		const chunkInfosFromTextChunker = this.textChunker.chunkText(
+		const chunkInfosFromTextChunker = await this.textChunker.chunkText(
 			currentContent,
 			file.path
 		);

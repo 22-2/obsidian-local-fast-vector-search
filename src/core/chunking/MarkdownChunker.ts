@@ -2,7 +2,6 @@ import {
 	split as splitSentencesInternal,
 	SentenceSplitterSyntax,
 } from "sentence-splitter";
-import { createHash } from "crypto";
 import type { Chunk } from "./types";
 import {
 	MAX_CHUNK_SIZE,
@@ -29,8 +28,12 @@ export class MarkdownChunker {
 	/**
 	 * ノート内容のSHA-256ハッシュを生成
 	 */
-	private static computeHash(content: string): string {
-		return createHash("sha256").update(content, "utf8").digest("hex");
+	private static async computeHash(content: string): Promise<string> {
+		const encoder = new TextEncoder();
+		const data = encoder.encode(content);
+		const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+		const hashArray = Array.from(new Uint8Array(hashBuffer));
+		return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 	}
 
 	/**
@@ -68,9 +71,9 @@ export class MarkdownChunker {
 		this.cache.clear();
 	}
 
-	public static chunkMarkdown(noteContent: string): Chunk[] {
+	public static async chunkMarkdown(noteContent: string): Promise<Chunk[]> {
 		// ハッシュを計算してキャッシュをチェック
-		const contentHash = this.computeHash(noteContent);
+		const contentHash = await this.computeHash(noteContent);
 		const cachedEntry = this.cache.get(contentHash);
 		const now = Date.now();
 
