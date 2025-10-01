@@ -972,7 +972,7 @@ export default class MyVectorPlugin extends Plugin {
 			);
 		}
 
-		await deleteDB("pglite/" + DB_NAME);
+		await deleteDB("/pglite/" + DB_NAME);
 		this.logger?.verbose_log(
 			"PGlite database files deleted from IndexedDB."
 		);
