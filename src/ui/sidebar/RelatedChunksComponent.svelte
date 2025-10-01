@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type MyVectorPlugin from "../../main";
 	import type { SimilarityResultItem } from "../../core/storage/types";
+	import type { SimilarityResultItemWithPreview } from "../../shared/types/ui";
 	import { writable, type Writable } from "svelte/store";
 	import { getIcon } from "obsidian";
 	import ChunkItemComponent from "./ChunkItemComponent.svelte";
@@ -8,21 +9,23 @@
 
 	export let plugin: MyVectorPlugin;
 	export let activeNoteName: string | null;
-	export let relatedChunks: SimilarityResultItem[];
+	export let relatedChunks: SimilarityResultItemWithPreview[];
 	export let onChunkClick: (item: SimilarityResultItem) => Promise<void>;
 
-	type FileGroup = [string, SimilarityResultItem[]];
-	type ChunkMap = Map<string, SimilarityResultItem[]>;
+	type FileGroup = [string, SimilarityResultItemWithPreview[]];
+	type ChunkMap = Map<string, SimilarityResultItemWithPreview[]>;
 	type ChunkQueue = {
-		chunks: SimilarityResultItem[];
+		chunks: SimilarityResultItemWithPreview[];
 		currentIndex: number;
 		isDisplaying: boolean;
 	};
 
 	let displayedFileGroups: FileGroup[] = [];
 	let allGroupedChunks: ChunkMap = new Map();
-	let displayedChunksInExpandedGroups: Map<string, SimilarityResultItem[]> =
-		new Map();
+	let displayedChunksInExpandedGroups: Map<
+		string,
+		SimilarityResultItemWithPreview[]
+	> = new Map();
 	let chunkDisplayQueues: Map<string, ChunkQueue> = new Map();
 	let collapseIconSvg = "";
 	let isDisplaying = false;
@@ -72,8 +75,10 @@
 		);
 	}
 
-	function groupChunksByPath(chunks: SimilarityResultItem[]): ChunkMap {
-		const map = new Map<string, SimilarityResultItem[]>();
+	function groupChunksByPath(
+		chunks: SimilarityResultItemWithPreview[],
+	): ChunkMap {
+		const map = new Map<string, SimilarityResultItemWithPreview[]>();
 
 		if (!chunks?.length) {
 			return map;
@@ -94,7 +99,9 @@
 		return map;
 	}
 
-	function processAndDisplayChunks(chunks: SimilarityResultItem[]): void {
+	function processAndDisplayChunks(
+		chunks: SimilarityResultItemWithPreview[],
+	): void {
 		resetDisplayState();
 		allGroupedChunks = groupChunksByPath(chunks);
 
@@ -116,7 +123,9 @@
 		}
 	}
 
-	function updateExpandedFiles(chunks: SimilarityResultItem[]): void {
+	function updateExpandedFiles(
+		chunks: SimilarityResultItemWithPreview[],
+	): void {
 		if (!chunks?.length) {
 			expandedFiles.set(new Set());
 			return;
