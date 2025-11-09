@@ -1,0 +1,296 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { MarkdownChunker } from "./MarkdownChunker";
+import type { Chunk } from "./types";
+
+describe("MarkdownChunker", () => {
+	beforeEach(() => {
+		// 各テスト前にキャッシュをクリア
+		MarkdownChunker.clearCache();
+	});
+
+	describe("基本的なチャンク分割", () => {
+		it("空のコンテンツは空の配列を返す", async () => {
+			const result = await MarkdownChunker.chunkMarkdown("");
+			expect(result).toEqual([]);
+		});
+
+		it("空白のみのコンテンツは空の配列を返す", async () => {
+			const result = await MarkdownChunker.chunkMarkdown("   \n\n  ");
+			expect(result).toEqual([]);
+		});
+
+		it("単一の文章を正しくチャンク化する", async () => {
+			const content = "これはテストです。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			expect(result[0].text).toBe("これはテストです。");
+			expect(result[0].originalOffsetStart).toBe(0);
+			expect(result[0].originalOffsetEnd).toBe(content.length);
+		});
+
+		it("複数の文章を適切に結合する", async () => {
+			const content = "最初の文です。次の文です。三番目の文です。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result.length).toBeGreaterThan(0);
+			expect(result[0].text).toContain("最初の文です。");
+		});
+	});
+
+	describe("フロントマター処理", () => {
+		it("フロントマターを除去する", async () => {
+			const content = `---
+title: Test
+tags: [test, markdown]
+---
+
+これはコンテンツです。`;
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			expect(result[0].text).toBe("これはコンテンツです。");
+			// フロントマター分のオフセットが考慮されている
+			expect(result[0].originalOffsetStart).toBeGreaterThan(30);
+		});
+
+		it("フロントマターがない場合も正常に動作する", async () => {
+			const content = "通常のテキストです。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			expect(result[0].originalOffsetStart).toBe(0);
+		});
+	});
+
+	describe("URL処理", () => {
+		it("URLを除去する", async () => {
+			const content = "これは https://example.com のリンクです。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			expect(result[0].text).not.toContain("https://");
+			expect(result[0].text).toContain("これは");
+			expect(result[0].text).toContain("のリンクです。");
+		});
+
+		it("複数のURLを除去する", async () => {
+			const content =
+				"最初のリンク http://example.com と二番目のリンク https://test.com です。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			expect(result[0].text).not.toContain("http://");
+			expect(result[0].text).not.toContain("https://");
+		});
+	});
+
+	describe("長文の処理", () => {
+		it("MAX_CHUNK_SIZEを超える文章を分割する", async () => {
+			// 1000文字を超える長い文章
+			const longSentence = "あ".repeat(1100) + "。";
+			const result = await MarkdownChunker.chunkMarkdown(longSentence);
+
+			// 複数のチャンクに分割される
+			expect(result.length).toBeGreaterThan(1);
+			// 各チャンクのサイズが適切
+			result.forEach((chunk) => {
+				expect(chunk.text.length).toBeLessThanOrEqual(1100);
+			});
+		});
+
+		it("複数の文章が適切にチャンクに配分される", async () => {
+			// 各文は短いが、合計で1000文字を超える
+			const sentences = Array(20)
+				.fill(0)
+				.map((_, i) => `これは${i + 1}番目の文章です。`)
+				.join("");
+			const result = await MarkdownChunker.chunkMarkdown(sentences);
+
+			expect(result.length).toBeGreaterThan(0);
+			// 全てのチャンクのテキストを結合すると元のテキストの内容を含む
+			const combinedText = result.map((c) => c.text).join(" ");
+			expect(combinedText).toContain("1番目の文章です。");
+			expect(combinedText).toContain("20番目の文章です。");
+		});
+	});
+
+	describe("オフセット計算", () => {
+		it("正しいオフセット情報を保持する", async () => {
+			const content = "最初の文。二番目の文。三番目の文。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			result.forEach((chunk) => {
+				// オフセットが有効な範囲内
+				expect(chunk.originalOffsetStart).toBeGreaterThanOrEqual(0);
+				expect(chunk.originalOffsetEnd).toBeLessThanOrEqual(
+					content.length
+				);
+				expect(chunk.originalOffsetEnd).toBeGreaterThan(
+					chunk.originalOffsetStart
+				);
+
+				// チャンクテキストが元のコンテンツに含まれる内容であることを確認
+				// (チャンク化の過程で文と文の間にスペースが挿入されるため完全一致ではない)
+				const words = chunk.text.split(" ");
+				words.forEach((word) => {
+					if (word.trim()) {
+						expect(content).toContain(word.trim());
+					}
+				});
+			});
+		});
+
+		it("フロントマター考慮後のオフセットが正しい", async () => {
+			const frontmatter = `---
+title: Test
+---
+
+`;
+			const content = "これはテストです。";
+			const fullContent = frontmatter + content;
+			const result = await MarkdownChunker.chunkMarkdown(fullContent);
+
+			expect(result).toHaveLength(1);
+			// フロントマター分のオフセットが加算されている
+			expect(result[0].originalOffsetStart).toBe(frontmatter.length);
+			expect(result[0].originalOffsetEnd).toBe(fullContent.length);
+		});
+	});
+
+	describe("キャッシュ機能", () => {
+		it("同じコンテンツは2回目以降キャッシュから返される", async () => {
+			const content = "キャッシュテスト用の文章です。";
+
+			// 1回目の呼び出し
+			const result1 = await MarkdownChunker.chunkMarkdown(content);
+
+			// 2回目の呼び出し（キャッシュから取得）
+			const result2 = await MarkdownChunker.chunkMarkdown(content);
+
+			// 結果が同じ
+			expect(result1).toEqual(result2);
+			// ただし異なるオブジェクト（ディープコピー）
+			expect(result1).not.toBe(result2);
+		});
+
+		it("異なるコンテンツは別々にキャッシュされる", async () => {
+			const content1 = "最初のコンテンツです。";
+			const content2 = "二番目のコンテンツです。";
+
+			const result1 = await MarkdownChunker.chunkMarkdown(content1);
+			const result2 = await MarkdownChunker.chunkMarkdown(content2);
+
+			expect(result1[0].text).not.toBe(result2[0].text);
+		});
+
+		it("clearCache()でキャッシュがクリアされる", async () => {
+			const content = "キャッシュクリアテストです。";
+
+			await MarkdownChunker.chunkMarkdown(content);
+			MarkdownChunker.clearCache();
+
+			// キャッシュクリア後も正常に動作
+			const result = await MarkdownChunker.chunkMarkdown(content);
+			expect(result).toHaveLength(1);
+		});
+	});
+
+	describe("Chunk型の検証", () => {
+		it("返されるChunkが正しい型構造を持つ", async () => {
+			const content = "型チェック用のテストです。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+
+			const chunk: Chunk = result[0];
+			expect(typeof chunk.text).toBe("string");
+			expect(typeof chunk.originalOffsetStart).toBe("number");
+			expect(typeof chunk.originalOffsetEnd).toBe("number");
+			expect(Array.isArray(chunk.contributingSegmentIds)).toBe(true);
+		});
+	});
+
+	describe("エッジケース", () => {
+		it("改行のみのコンテンツを処理できる", async () => {
+			const content = "\n\n\n";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+			expect(result).toEqual([]);
+		});
+
+		it("特殊文字を含むテキストを処理できる", async () => {
+			const content = "特殊文字: !@#$%^&*()_+-=[]{}|;:',.<>?/~`。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result.length).toBeGreaterThan(0);
+			expect(result[0].text).toContain("特殊文字");
+		});
+
+		it("日本語、英語、数字の混在テキストを処理できる", async () => {
+			const content = "これはTest123です。This is テスト456。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result.length).toBeGreaterThan(0);
+			const allText = result.map((c) => c.text).join(" ");
+			expect(allText).toContain("Test123");
+			expect(allText).toContain("テスト456");
+		});
+
+		it("絵文字を含むテキストを処理できる", async () => {
+			const content = "これはテストです🎉✨。絵文字を含みます😊。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result.length).toBeGreaterThan(0);
+		});
+	});
+
+	describe("実践的なMarkdownコンテンツ", () => {
+		it("見出しを含むMarkdownを処理できる", async () => {
+			const content = `# タイトル
+
+## セクション1
+これは最初のセクションです。
+
+## セクション2
+これは二番目のセクションです。`;
+
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result.length).toBeGreaterThan(0);
+			const allText = result.map((c) => c.text).join(" ");
+			expect(allText).toContain("タイトル");
+			expect(allText).toContain("セクション1");
+			expect(allText).toContain("セクション2");
+		});
+
+		it("リストを含むMarkdownを処理できる", async () => {
+			const content = `リスト項目:
+- 項目1
+- 項目2
+- 項目3`;
+
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result.length).toBeGreaterThan(0);
+			const allText = result.map((c) => c.text).join(" ");
+			expect(allText).toContain("項目1");
+			expect(allText).toContain("項目2");
+			expect(allText).toContain("項目3");
+		});
+
+		it("コードブロックを含むMarkdownを処理できる", async () => {
+			const content = `説明文です。
+
+\`\`\`javascript
+const x = 1;
+console.log(x);
+\`\`\`
+
+続きの文章です。`;
+
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result.length).toBeGreaterThan(0);
+		});
+	});
+});
