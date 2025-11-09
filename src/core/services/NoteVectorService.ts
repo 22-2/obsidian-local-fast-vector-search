@@ -3,13 +3,15 @@ import { TextChunker } from "../chunking/TextChunker";
 import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
 import type { SimilarityResultItem } from "../storage/types";
 import { LoggerService } from "../../shared/services/LoggerService";
+import type { PluginSettings } from "src/pluginSettings";
 
 export class NoteVectorService {
 	constructor(
 		private app: App,
 		private textChunker: TextChunker,
 		private workerProxy: IntegratedWorkerProxy,
-		private logger: LoggerService | null
+		private logger: LoggerService | null,
+		private settings: PluginSettings
 	) {}
 
 	public async getNoteVector(file: TFile): Promise<number[] | null> {
@@ -21,7 +23,11 @@ export class NoteVectorService {
 			return null;
 		}
 
-		const chunkInfos = await this.textChunker.chunkText(content, file.path);
+		const chunkInfos = await this.textChunker.chunkText(
+			content,
+			file.path,
+			this.settings
+		);
 		if (chunkInfos.length === 0) {
 			this.logger?.verbose_log(
 				`No chunks generated for note ${file.path}.`

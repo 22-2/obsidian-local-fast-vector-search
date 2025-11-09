@@ -1,12 +1,14 @@
 import type { ChunkInfo } from "./types";
 import { MarkdownChunker } from "./MarkdownChunker";
+import type { PluginSettings } from "src/pluginSettings";
 
 export class TextChunker {
 	constructor() {}
 
 	public async chunkText(
 		noteContent: string,
-		filePath?: string
+		filePath?: string,
+		settings?: PluginSettings
 	): Promise<ChunkInfo[]> {
 		const fileName = this.extractTitleFromPath(filePath);
 
@@ -25,7 +27,8 @@ export class TextChunker {
 			];
 		}
 		const chunksFromMarkdown = await MarkdownChunker.chunkMarkdown(
-			noteContent
+			noteContent,
+			{ excludeHeaders: settings?.excludeHeadersInVectorization }
 		);
 
 		if (chunksFromMarkdown.length === 0) {

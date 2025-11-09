@@ -5,6 +5,7 @@ export interface PluginSettings {
 	relatedChunksResultLimit: number;
 	autoShowRelatedChunksSidebar: boolean;
 	expandRelatedChunksFileGroups: boolean;
+	excludeHeadersInVectorization: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -14,4 +15,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	relatedChunksResultLimit: 30,
 	autoShowRelatedChunksSidebar: true,
 	expandRelatedChunksFileGroups: true,
+	excludeHeadersInVectorization: false,
 };

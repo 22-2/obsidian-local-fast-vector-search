@@ -3,14 +3,16 @@ import { TextChunker } from "../../core/chunking/TextChunker";
 import { LoggerService } from "../../shared/services/LoggerService";
 import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
 import type { ChunkInfo } from "../storage/types";
+import type { PluginSettings } from "src/pluginSettings";
 
 export class VectorizationService {
 	private logger: LoggerService | null;
 	constructor(
 		private app: App,
-		private workerProxy: IntegratedWorkerProxy, // IVectorizer と PGliteVectorStore の代わりに workerProxy を使用
+		private workerProxy: IntegratedWorkerProxy,
 		private textChunker: TextChunker,
-		logger: LoggerService | null
+		logger: LoggerService | null,
+		private settings: PluginSettings
 	) {
 		this.logger = logger;
 	}
@@ -38,7 +40,8 @@ export class VectorizationService {
 				const content = await this.app.vault.cachedRead(file);
 				const chunkInfos = await this.textChunker.chunkText(
 					content,
-					file.path
+					file.path,
+					this.settings
 				);
 
 				if (chunkInfos.length === 0) {
@@ -151,7 +154,8 @@ export class VectorizationService {
 
 		const chunkInfosFromTextChunker = await this.textChunker.chunkText(
 			currentContent,
-			file.path
+			file.path,
+			this.settings
 		);
 
 		if (chunkInfosFromTextChunker.length === 0) {

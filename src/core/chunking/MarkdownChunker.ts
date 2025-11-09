@@ -22,14 +22,22 @@ interface CacheEntry {
 	timestamp: number;
 }
 
+interface ChunkingOptions {
+	excludeHeaders?: boolean;
+}
+
 export class MarkdownChunker {
 	private static cache = new Map<string, CacheEntry>();
 	private static readonly MAX_CACHE_SIZE = 100;
 	private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5分
 
-	private static async computeHash(content: string): Promise<string> {
+	private static async computeHash(
+		content: string,
+		options?: ChunkingOptions
+	): Promise<string> {
 		const encoder = new TextEncoder();
-		const data = encoder.encode(content);
+		const dataToHash = content + JSON.stringify(options || {});
+		const data = encoder.encode(dataToHash);
 		const hashBuffer = await crypto.subtle.digest("SHA-256", data);
 		const hashArray = Array.from(new Uint8Array(hashBuffer));
 		return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -63,9 +71,13 @@ export class MarkdownChunker {
 		this.cache.clear();
 	}
 
-	public static async chunkMarkdown(noteContent: string): Promise<Chunk[]> {
+	public static async chunkMarkdown(
+		noteContent: string,
+		options?: ChunkingOptions
+	): Promise<Chunk[]> {
 		const { hash, chunks: cachedChunks } = await this.tryGetCachedChunks(
-			noteContent
+			noteContent,
+			options
 		);
 		if (cachedChunks) {
 			return cachedChunks;
@@ -73,7 +85,7 @@ export class MarkdownChunker {
 
 		const { processedText, frontmatterLength } =
 			this.removeFrontmatter(noteContent);
-		const sanitizedText = this.sanitizeMarkdown(processedText);
+		const sanitizedText = this.sanitizeMarkdown(processedText, options);
 		if (!sanitizedText.trim()) {
 			return [];
 		}
@@ -86,9 +98,10 @@ export class MarkdownChunker {
 	}
 
 	private static async tryGetCachedChunks(
-		content: string
+		content: string,
+		options?: ChunkingOptions
 	): Promise<{ hash: string; chunks: Chunk[] | null }> {
-		const hash = await this.computeHash(content);
+		const hash = await this.computeHash(content, options);
 		const entry = this.cache.get(hash);
 		if (!entry) {
 			return { hash, chunks: null };
@@ -100,14 +113,27 @@ export class MarkdownChunker {
 		return { hash, chunks: this.cloneChunks(entry.chunks) };
 	}
 
-	private static sanitizeMarkdown(text: string): string {
-		const withoutQuotesAndCallouts = this.preprocessQuotesAndCallouts(text);
+	private static sanitizeMarkdown(
+		text: string,
+		options?: ChunkingOptions
+	): string {
+		let processedText = text;
+		if (options?.excludeHeaders) {
+			processedText = this.preprocessHeaders(processedText);
+		}
+		const withoutQuotesAndCallouts =
+			this.preprocessQuotesAndCallouts(processedText);
 		const withoutTables = this.preprocessMarkdownTables(
 			withoutQuotesAndCallouts
 		);
 		const withoutImageLinks = this.preprocessImageLinks(withoutTables);
 		const withoutFootnotes = this.preprocessFootnotes(withoutImageLinks);
 		return this.removeUrls(withoutFootnotes);
+	}
+
+	private static preprocessHeaders(text: string): string {
+		const HEADER_REGEX = /^\s*#{1,6}\s+.*/gm;
+		return text.replace(HEADER_REGEX, (match) => " ".repeat(match.length));
 	}
 
 	private static buildChunks(

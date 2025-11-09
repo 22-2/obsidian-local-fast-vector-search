@@ -132,6 +132,22 @@ export class VectorizerSettingTab extends PluginSettingTab {
 					})
 			);
 		new Setting(containerEl)
+			.setName("Exclude Headers from Vectorization")
+			.setDesc(
+				"If enabled, markdown headers (#, ##, etc.) will be excluded from the text before vectorization."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(
+						this.plugin.settings.excludeHeadersInVectorization
+					)
+					.onChange(async (value) => {
+						this.plugin.settings.excludeHeadersInVectorization =
+							value;
+						await this.plugin.saveSettings();
+					})
+			);
+		new Setting(containerEl)
 			.setName("Auto Show Related Chunks Sidebar")
 			.setDesc(
 				"Automatically open the related chunks sidebar when a note is opened."

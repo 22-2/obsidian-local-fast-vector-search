@@ -741,4 +741,60 @@ console.log(x);
 			expect(originalSlice).toBe(content);
 		});
 	});
+
+	describe("ヘッダー処理", () => {
+		it("オプションがtrueの場合、ヘッダー行を除去（空白化）し、オフセットを維持する", async () => {
+			const content = `# Title
+
+Some text here.
+
+## Subtitle`;
+			const result = await MarkdownChunker.chunkMarkdown(content, {
+				excludeHeaders: true,
+			});
+
+			expect(result).toHaveLength(1);
+			const chunk = result[0];
+
+			const normalizedText = chunk.text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toBe("Some text here.");
+			expect(chunk.text).not.toContain("Title");
+			expect(chunk.text).not.toContain("Subtitle");
+
+			// オフセットは元のコンテンツの範囲を表す
+			expect(chunk.originalOffsetStart).toBeGreaterThanOrEqual(0);
+			expect(chunk.originalOffsetEnd).toBeLessThanOrEqual(content.length);
+		});
+
+		it("オプションがfalseの場合、ヘッダーはテキストに含まれる", async () => {
+			const content = `# Title
+
+Some text.`;
+			const result = await MarkdownChunker.chunkMarkdown(content, {
+				excludeHeaders: false,
+			});
+			expect(result).toHaveLength(1);
+			const normalizedText = result[0].text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toBe("# Title Some text.");
+		});
+
+		it("オプションが未指定の場合、ヘッダーはテキストに含まれる（デフォルト動作）", async () => {
+			const content = `# Title
+
+Some text.`;
+			const result = await MarkdownChunker.chunkMarkdown(content);
+			expect(result).toHaveLength(1);
+			const normalizedText = result[0].text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toBe("# Title Some text.");
+		});
+	});
 });

@@ -277,7 +277,8 @@ export default class MyVectorPlugin extends Plugin {
 				this.app,
 				this.textChunker,
 				this.proxy,
-				this.logger
+				this.logger,
+				this.settings
 			);
 			if (this.logger)
 				this.logger.verbose_log("NoteVectorService initialized.");
@@ -568,7 +569,8 @@ export default class MyVectorPlugin extends Plugin {
 					this.app,
 					this.proxy, // IntegratedWorkerProxy を渡す
 					this.textChunker,
-					this.logger
+					this.logger,
+					this.settings
 				);
 				if (this.logger)
 					this.logger.verbose_log(
