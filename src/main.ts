@@ -104,11 +104,8 @@ export default class MyVectorPlugin extends Plugin {
 						);
 						await this.resourceInitializer.commandHandler.rebuildAllIndexes();
 
-						this.logger?.log(
-							"Index rebuild complete. Updating related chunks sidebar."
-						);
+						this.logger?.log("Index rebuild complete.");
 						this.viewManager.resetLastProcessedFile();
-						await this.viewManager.handleActiveLeafChange();
 					} else {
 						const errorMsg =
 							"Could not start rebuild: Command handler is not ready.";
