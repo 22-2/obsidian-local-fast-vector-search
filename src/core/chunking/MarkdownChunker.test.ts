@@ -605,4 +605,140 @@ console.log(x);
 			expect(result.length).toBeGreaterThan(0);
 		});
 	});
+
+	describe("footnote処理", () => {
+		it("基本的なfootnote参照を除去し、オフセットを維持する", async () => {
+			const content = "これはテキストです[^1]。続きのテキスト。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			const chunk = result[0];
+
+			expect(chunk.text).not.toContain("[^1]");
+
+			const normalizedText = chunk.text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toBe(
+				"これはテキストです 。 続きのテキスト。"
+			);
+
+			expect(chunk.originalOffsetStart).toBe(0);
+			expect(chunk.originalOffsetEnd).toBe(content.length);
+		});
+
+		it("footnote定義を除去し、オフセットを維持する", async () => {
+			const content = `テキストです[^1]。
+
+[^1]: これはfootnoteの説明です。`;
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			const chunk = result[0];
+
+			expect(chunk.text).not.toContain("[^1]");
+			expect(chunk.text).not.toContain("[^1]:");
+
+			const normalizedText = chunk.text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toBe(
+				"テキストです 。 これはfootnoteの説明です。"
+			);
+
+			expect(chunk.originalOffsetStart).toBe(0);
+			expect(chunk.originalOffsetEnd).toBe(content.length);
+		});
+
+		it("複数のfootnoteを処理する", async () => {
+			const content = `文章1[^1]と文章2[^2]。
+
+[^1]: 最初のfootnote
+[^2]: 二番目のfootnote`;
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			const chunk = result[0];
+
+			expect(chunk.text).not.toContain("[^1]");
+			expect(chunk.text).not.toContain("[^2]");
+
+			const normalizedText = chunk.text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toContain("文章1");
+			expect(normalizedText).toContain("文章2");
+			expect(normalizedText).toContain("最初のfootnote");
+			expect(normalizedText).toContain("二番目のfootnote");
+
+			expect(chunk.originalOffsetStart).toBe(0);
+			expect(chunk.originalOffsetEnd).toBe(content.length);
+		});
+
+		it("名前付きfootnoteを処理する", async () => {
+			const content = `テキスト[^note-name]です。
+
+[^note-name]: 名前付きfootnoteの内容`;
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			const chunk = result[0];
+
+			expect(chunk.text).not.toContain("[^note-name]");
+
+			const normalizedText = chunk.text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toContain("テキスト");
+			expect(normalizedText).toContain("名前付きfootnoteの内容");
+
+			expect(chunk.originalOffsetStart).toBe(0);
+			expect(chunk.originalOffsetEnd).toBe(content.length);
+		});
+
+		it("footnoteがないテキストは影響を受けない", async () => {
+			const content = "これは普通のテキストです。footnoteはありません。";
+			const result = await MarkdownChunker.chunkMarkdown(content);
+
+			expect(result).toHaveLength(1);
+			expect(result[0].text).toBe(
+				"これは普通のテキストです。 footnoteはありません。"
+			);
+			expect(result[0].originalOffsetStart).toBe(0);
+			expect(result[0].originalOffsetEnd).toBe(content.length);
+		});
+
+		it("オフセットがずれないことを厳密に確認する", async () => {
+			const prefix = "前の文章。\n";
+			const main = "重要な文章[^important]。\n";
+			const footnote = "[^important]: 重要な注釈";
+			const content = prefix + main + footnote;
+
+			const result = await MarkdownChunker.chunkMarkdown(content);
+			expect(result).toHaveLength(1);
+			const chunk = result[0];
+
+			const normalizedText = chunk.text
+				.split(/\s+/)
+				.filter((w) => w)
+				.join(" ");
+			expect(normalizedText).toContain("前の文章");
+			expect(normalizedText).toContain("重要な文章");
+			expect(normalizedText).toContain("重要な注釈");
+			expect(normalizedText).not.toContain("[^important]");
+
+			expect(chunk.originalOffsetStart).toBe(0);
+			expect(chunk.originalOffsetEnd).toBe(content.length);
+
+			const originalSlice = content.substring(
+				chunk.originalOffsetStart,
+				chunk.originalOffsetEnd
+			);
+			expect(originalSlice).toBe(content);
+		});
+	});
 });

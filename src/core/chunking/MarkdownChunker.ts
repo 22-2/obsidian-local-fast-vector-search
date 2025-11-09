@@ -106,7 +106,8 @@ export class MarkdownChunker {
 			withoutQuotesAndCallouts
 		);
 		const withoutImageLinks = this.preprocessImageLinks(withoutTables);
-		return this.removeUrls(withoutImageLinks);
+		const withoutFootnotes = this.preprocessFootnotes(withoutImageLinks);
+		return this.removeUrls(withoutFootnotes);
 	}
 
 	private static buildChunks(
@@ -257,6 +258,20 @@ export class MarkdownChunker {
 		return text.replace(IMAGE_LINK_REGEX, (match) =>
 			" ".repeat(match.length)
 		);
+	}
+
+	private static preprocessFootnotes(text: string): string {
+		const FOOTNOTE_DEF_REGEX = /^\[\^[^\]]+\]:\s*/gm;
+		// footnote参照: [^identifier]
+		const FOOTNOTE_REF_REGEX = /\[\^[^\]]+\]/g;
+
+		let result = text.replace(FOOTNOTE_DEF_REGEX, (match) =>
+			" ".repeat(match.length)
+		);
+		result = result.replace(FOOTNOTE_REF_REGEX, (match) =>
+			" ".repeat(match.length)
+		);
+		return result;
 	}
 
 	private static removeUrls(text: string): string {
