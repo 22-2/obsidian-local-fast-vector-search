@@ -94,6 +94,37 @@ export default class MyVectorPlugin extends Plugin {
 					this.initializationPromise = null;
 				}
 			);
+
+			try {
+				const rebuildFlag = sessionStorage.getItem(
+					"my-vector-plugin-rebuild-flag"
+				);
+				if (rebuildFlag === "true") {
+					sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
+
+					await this.ensureResourcesInitialized();
+
+					if (this.commandHandler) {
+						new Notice(
+							"Resources initialized. Starting index rebuild...",
+							3000
+						);
+						await this.commandHandler.rebuildAllIndexes();
+					} else {
+						const errorMsg =
+							"Could not start rebuild: Command handler is not ready.";
+						new Notice(errorMsg, 7000);
+						this.logger?.error(errorMsg);
+					}
+				}
+			} catch (error) {
+				const errorMsg =
+					"An error occurred during post-reload rebuild action. Check console.";
+				console.error(errorMsg, error);
+				new Notice(errorMsg, 7000);
+				sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
+			}
+
 			if (this.settings.autoShowRelatedChunksSidebar) {
 				this.activateRelatedChunksView();
 			}
@@ -186,27 +217,29 @@ export default class MyVectorPlugin extends Plugin {
 		this.addCommand({
 			id: "rebuild-all-indexes",
 			name: "Rebuild all indexes (Clear and re-vectorize all notes)",
-			callback: async () => {
+			callback: () => {
 				try {
-					await this.ensureResourcesInitialized();
+					sessionStorage.setItem(
+						"my-vector-plugin-rebuild-flag",
+						"true"
+					);
+					new Notice(
+						"Preparing to rebuild... Reloading the app now."
+					);
+
+					setTimeout(() => {
+						this.app.commands.executeCommandById("app:reload");
+					}, 1000);
 				} catch (error) {
 					console.error(
-						"Resource initialization check failed for rebuild:",
+						"Failed to set rebuild flag and reload:",
 						error
 					);
 					new Notice(
-						"Resources are not ready for rebuild. Check console."
+						"Could not initiate rebuild process. Check console."
 					);
-					return;
+					sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
 				}
-				if (!this.commandHandler) {
-					new Notice(
-						"Command handler not ready for rebuild. Please try reloading the plugin."
-					);
-					return;
-				}
-
-				await this.commandHandler.rebuildAllIndexes();
 			},
 		});
 
