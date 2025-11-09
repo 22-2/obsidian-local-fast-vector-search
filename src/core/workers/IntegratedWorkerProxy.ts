@@ -129,7 +129,7 @@ export class IntegratedWorkerProxy {
 				this.logger?.verbose_log(
 					`[IntegratedWorker Progress] ${JSON.stringify(payload)}`
 				);
-			} else {
+			} else if (type !== "initialized") {
 				this.logger?.warn(
 					"IntegratedWorkerProxy: Received unknown message type:",
 					type

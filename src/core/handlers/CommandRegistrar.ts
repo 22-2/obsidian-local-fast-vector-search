@@ -72,30 +72,24 @@ export class CommandRegistrar {
 			id: "rebuild-all-indexes",
 			name: "Rebuild all indexes (Clear and re-vectorize all notes)",
 			callback: () => {
-				try {
-					sessionStorage.setItem(
-						"my-vector-plugin-rebuild-flag",
-						"true"
-					);
-					new Notice(
-						"Preparing to rebuild... Reloading the app now."
-					);
-
-					setTimeout(() => {
-						this.app.commands.executeCommandById("app:reload");
-					}, 1000);
-				} catch (error) {
-					console.error(
-						"Failed to set rebuild flag and reload:",
-						error
-					);
-					new Notice(
-						"Could not initiate rebuild process. Check console."
-					);
-					sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
-				}
+				this.rebuildAllIndexes();
 			},
 		});
+	}
+
+	public rebuildAllIndexes(): void {
+		try {
+			sessionStorage.setItem("my-vector-plugin-rebuild-flag", "true");
+			new Notice("Preparing to rebuild... Reloading the app now.");
+
+			setTimeout(() => {
+				this.app.commands.executeCommandById("app:reload");
+			}, 1000);
+		} catch (error) {
+			console.error("Failed to set rebuild flag and reload:", error);
+			new Notice("Could not initiate rebuild process. Check console.");
+			sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
+		}
 	}
 
 	private registerDiscardDbCommand(): void {

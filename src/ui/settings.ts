@@ -3,6 +3,7 @@ import MyVectorPlugin from "../main";
 import { DiscardDBModal } from "./modals/DiscardDBModal";
 import { DeleteResourcesModal } from "./modals/DeleteResourcesModal";
 import { RebuildIndexModal } from "./modals/RebuildIndexModal";
+import { RebuildAllIndexesModal } from "./modals/RebuildAllIndexesModal";
 
 export class VectorizerSettingTab extends PluginSettingTab {
 	plugin: MyVectorPlugin;
@@ -16,42 +17,21 @@ export class VectorizerSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "General" });
+		containerEl.createEl("h2", { text: "Index management" });
 
 		new Setting(containerEl)
-			.setName("Provider")
+			.setName("Rebuild All Indexes")
 			.setDesc(
-				"Select the vectorizer provider (Requires restart or reload after change)"
+				"Rebuild the entire vector index from scratch. This will clear all existing data and re-process all your notes."
 			)
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOption("transformers", "Transformers.js (in Obsidian)")
-					.setValue(this.plugin.settings.provider)
-					.onChange(async (value) => {
-						this.plugin.settings.provider = value;
-						await this.plugin.saveSettings();
-						new Notice(
-							"Provider changed. Please reload the plugin for changes to take effect."
-						);
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Enable Verbose Logging")
-			.setDesc("Enable detailed logging for development purposes.")
-			.addToggle((toggle) =>
-				toggle
-					.setValue(
-						this.plugin.settings.verboseLoggingEnabled || false
-					)
-					.onChange(async (value) => {
-						this.plugin.settings.verboseLoggingEnabled = value;
-						await this.plugin.saveSettings();
-						if (this.plugin.logger) {
-							this.plugin.logger.updateSettings({
-								verboseLoggingEnabled: value,
-							});
-						}
+			.addButton((button) =>
+				button
+					.setButtonText("Rebuild Indexes")
+					.setCta()
+					.onClick(() => {
+						new RebuildAllIndexesModal(this.app, async () => {
+							await this.plugin.commandRegistrar?.rebuildAllIndexes();
+						}).open();
 					})
 			);
 
@@ -230,6 +210,45 @@ export class VectorizerSettingTab extends PluginSettingTab {
 							onConfirm,
 							onCancel
 						).open();
+					})
+			);
+
+		containerEl.createEl("h2", { text: "General" });
+
+		// new Setting(containerEl)
+		// 	.setName("Provider")
+		// 	.setDesc(
+		// 		"Select the vectorizer provider (Requires restart or reload after change)"
+		// 	)
+		// 	.addDropdown((dropdown) =>
+		// 		dropdown
+		// 			.addOption("transformers", "Transformers.js (in Obsidian)")
+		// 			.setValue(this.plugin.settings.provider)
+		// 			.onChange(async (value) => {
+		// 				this.plugin.settings.provider = value;
+		// 				await this.plugin.saveSettings();
+		// 				new Notice(
+		// 					"Provider changed. Please reload the plugin for changes to take effect."
+		// 				);
+		// 			})
+		// 	);
+
+		new Setting(containerEl)
+			.setName("Enable Verbose Logging")
+			.setDesc("Enable detailed logging for development purposes.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(
+						this.plugin.settings.verboseLoggingEnabled || false
+					)
+					.onChange(async (value) => {
+						this.plugin.settings.verboseLoggingEnabled = value;
+						await this.plugin.saveSettings();
+						if (this.plugin.logger) {
+							this.plugin.logger.updateSettings({
+								verboseLoggingEnabled: value,
+							});
+						}
 					})
 			);
 	}

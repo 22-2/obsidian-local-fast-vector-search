@@ -28,7 +28,7 @@ export default class MyVectorPlugin extends Plugin {
 	private resourceInitializer!: ResourceInitializer;
 	private fileEventHandler!: FileEventHandler;
 	private viewManager!: ViewManager;
-	private commandRegistrar!: CommandRegistrar;
+	public commandRegistrar!: CommandRegistrar;
 	private debouncedHandleActiveLeafChange!: () => void;
 
 	async onload() {
@@ -197,6 +197,15 @@ export default class MyVectorPlugin extends Plugin {
 		await this.saveData(this.settings);
 		if (this.logger) {
 			this.logger.updateSettings(this.settings);
+		}
+	}
+
+	async rebuildAllIndexes(): Promise<void> {
+		await this.resourceInitializer.ensureResourcesInitialized();
+		if (this.resourceInitializer.commandHandler) {
+			await this.resourceInitializer.commandHandler.rebuildAllIndexes();
+		} else {
+			throw new Error("Command handler not ready.");
 		}
 	}
 
