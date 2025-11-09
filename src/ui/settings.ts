@@ -2,6 +2,7 @@ import { Plugin, Notice, App, PluginSettingTab, Setting } from "obsidian";
 import MyVectorPlugin from "../main";
 import { DiscardDBModal } from "./modals/DiscardDBModal";
 import { DeleteResourcesModal } from "./modals/DeleteResourcesModal";
+import { RebuildIndexModal } from "./modals/RebuildIndexModal";
 
 export class VectorizerSettingTab extends PluginSettingTab {
 	plugin: MyVectorPlugin;
@@ -132,22 +133,6 @@ export class VectorizerSettingTab extends PluginSettingTab {
 					})
 			);
 		new Setting(containerEl)
-			.setName("Exclude Headers from Vectorization")
-			.setDesc(
-				"If enabled, markdown headers (#, ##, etc.) will be excluded from the text before vectorization."
-			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(
-						this.plugin.settings.excludeHeadersInVectorization
-					)
-					.onChange(async (value) => {
-						this.plugin.settings.excludeHeadersInVectorization =
-							value;
-						await this.plugin.saveSettings();
-					})
-			);
-		new Setting(containerEl)
 			.setName("Auto Show Related Chunks Sidebar")
 			.setDesc(
 				"Automatically open the related chunks sidebar when a note is opened."
@@ -176,6 +161,69 @@ export class VectorizerSettingTab extends PluginSettingTab {
 						this.plugin.settings.expandRelatedChunksFileGroups =
 							value;
 						await this.plugin.saveSettings();
+					})
+			);
+
+		containerEl.createEl("h2", { text: "Vectorization" });
+
+		new Setting(containerEl)
+			.setName("Exclude Headers from Vectorization")
+			.setDesc(
+				"If enabled, markdown headers (#, ##, etc.) will be excluded from the text before vectorization. Changing this requires a full index rebuild."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(
+						this.plugin.settings.excludeHeadersInVectorization
+					)
+					.onChange(async (value) => {
+						const oldValue =
+							this.plugin.settings.excludeHeadersInVectorization;
+						if (value === oldValue) {
+							return;
+						}
+
+						const onConfirm = async () => {
+							this.plugin.settings.excludeHeadersInVectorization =
+								value;
+							await this.plugin.saveSettings();
+
+							try {
+								sessionStorage.setItem(
+									"my-vector-plugin-rebuild-flag",
+									"true"
+								);
+								new Notice(
+									"Setting updated. Reloading the app to start index rebuild..."
+								);
+								setTimeout(() => {
+									this.app.commands.executeCommandById(
+										"app:reload"
+									);
+								}, 1500);
+							} catch (error) {
+								console.error(
+									"Failed to set rebuild flag and reload:",
+									error
+								);
+								new Notice(
+									"Could not initiate rebuild process. Check console."
+								);
+								sessionStorage.removeItem(
+									"my-vector-plugin-rebuild-flag"
+								);
+								toggle.setValue(oldValue); // Revert UI
+							}
+						};
+						const onCancel = () => {
+							new Notice("Change cancelled.");
+							toggle.setValue(oldValue);
+						};
+						new RebuildIndexModal(
+							this.app,
+							onConfirm,
+							onCancel
+						).open();
 					})
 			);
 	}
