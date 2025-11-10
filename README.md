@@ -22,7 +22,7 @@
 > [!NOTE]
 > モデルが事前に学習した語彙の範囲外にある専門用語や固有名詞が多いと、分野によっては十分な精度が得られない場合があります。 単語レベルの検索ではその影響を受けやすくなることにご注意ください。
 
-## ダウンロードとセットアップ
+## ダウンロード•セットアップ
 
 1. [BRAT](https://github.com/TfTHacker/obsidian42-brat) に `https://github.com/uoFishbox/obsidian-local-fast-vector-search` を追加してダウンロード。
 2. 有効化後に表示されるモーダル上の `Start indexing` を選択。
@@ -41,4 +41,5 @@
 
 [^1]: **iOS デバイスでの注意**を参照
 [^2]: `hotchpotch/static-embedding-japanese` を `transformers.js` で[すぐに扱えるように整理を行いました。](https://huggingface.co/cfsdwe/static-embedding-japanese-ONNX-for-js)
+
 
