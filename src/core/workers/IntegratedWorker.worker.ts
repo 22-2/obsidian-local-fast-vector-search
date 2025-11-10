@@ -1,44 +1,36 @@
 // アンチドートコード: @huggingface/transformers がロードされる前に 'process' を無力化する
 // 他のプラグインによる configurable: false の process オブジェクトの汚染に対処
-if (typeof (self as any).process !== "undefined") {
+if (typeof (self as any).process !== "undefined" && (self as any).process.env) {
+	console.log(
+		'[VectorPlugin Worker] Detected a potentially conflicting "process" object. Attempting neutralization...'
+	);
 	try {
-		// 1. Object.defineProperty で再定義を試みる（より強力）
-		Object.defineProperty(self, "process", {
-			value: undefined,
-			writable: true,
-			configurable: true,
-		});
-		console.log(
-			'[VectorPlugin Worker] Successfully redefined "process" to be configurable.'
-		);
+		// プロパティが configurable: false だと delete や Object.defineProperty は失敗する。
+		// しかし、writable: true であれば、値を上書きすることは可能。
+		// 念のため元のオブジェクトを別名で保持してから、元のプロパティを undefined で上書きする。
+		(self as any)._UNSAFE_process_polyfill = (self as any).process;
+		(self as any).process = undefined;
+
+		if (typeof (self as any).process === "undefined") {
+			console.log(
+				'[VectorPlugin Worker] "process" object successfully neutralized by overwriting with undefined.'
+			);
+		} else {
+			// 上書きすら失敗した場合（writable: false）、これはもうどうしようもない最終手段
+			console.warn(
+				'[VectorPlugin Worker] Failed to overwrite "process" object. The environment is heavily constrained.'
+			);
+		}
 	} catch (e) {
-		console.warn(
-			'[VectorPlugin Worker] Could not redefine "process" with defineProperty:',
+		console.error(
+			'[VectorPlugin Worker] A critical error occurred while trying to neutralize the "process" object:',
 			e
 		);
 	}
-
-	try {
-		// 2. 削除を試みる
-		delete (self as any).process;
-		console.log(
-			'[VectorPlugin Worker] Successfully deleted "process" object.'
-		);
-	} catch (e) {
-		console.warn('[VectorPlugin Worker] Could not delete "process":', e);
-		// 3. 削除に失敗した場合は undefined に設定
-		try {
-			(self as any).process = undefined;
-			console.log(
-				'[VectorPlugin Worker] Set "process" to undefined as fallback.'
-			);
-		} catch (e2) {
-			console.warn(
-				'[VectorPlugin Worker] Could not set "process" to undefined:',
-				e2
-			);
-		}
-	}
+} else if (typeof (self as any).process !== "undefined") {
+	console.log(
+		'[VectorPlugin Worker] Detected a "process" object, but it seems harmless (no env property). Leaving it as is.'
+	);
 }
 
 // 最終チェック: process が未定義または無害な状態か確認
