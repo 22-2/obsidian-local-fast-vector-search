@@ -100,8 +100,8 @@ export default class MyVectorPlugin extends Plugin {
 						this.logger?.log(
 							"Database not found. Proposing initial index rebuild."
 						);
-						new InitialRebuildModal(this.app, () => {
-							this.commandRegistrar.rebuildAllIndexes();
+						new InitialRebuildModal(this.app, async () => {
+							await this.commandRegistrar.rebuildAllIndexes();
 						}).open();
 						return; // ユーザーのアクションを待つため、ここで処理を終了
 					}

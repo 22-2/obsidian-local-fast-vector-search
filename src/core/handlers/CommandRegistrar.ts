@@ -71,23 +71,35 @@ export class CommandRegistrar {
 		this.plugin.addCommand({
 			id: "rebuild-all-indexes",
 			name: "Rebuild all indexes (Clear and re-vectorize all notes)",
-			callback: () => {
-				this.rebuildAllIndexes();
+			callback: async () => {
+				await this.rebuildAllIndexes();
 			},
 		});
 	}
 
-	public rebuildAllIndexes(): void {
+	public async rebuildAllIndexes(): Promise<void> {
+		const progressNotice = new Notice("Preparing for rebuild...", 0);
 		try {
+			progressNotice.setMessage(
+				"Ensuring resources are ready for rebuild... This may take a moment."
+			);
+			await this.resourceInitializer.ensureResourcesInitialized();
+
 			sessionStorage.setItem("my-vector-plugin-rebuild-flag", "true");
-			new Notice("Preparing to rebuild... Reloading the app now.");
+
+			progressNotice.setMessage(
+				"Resources ready. Reloading the app to start index rebuild..."
+			);
 
 			setTimeout(() => {
 				this.app.commands.executeCommandById("app:reload");
-			}, 1000);
+			}, 1500);
 		} catch (error) {
-			console.error("Failed to set rebuild flag and reload:", error);
-			new Notice("Could not initiate rebuild process. Check console.");
+			console.error("Failed to prepare for rebuild:", error);
+			progressNotice.setMessage(
+				"Could not initiate rebuild process. Check console for details."
+			);
+			setTimeout(() => progressNotice.hide(), 7000);
 			sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
 		}
 	}

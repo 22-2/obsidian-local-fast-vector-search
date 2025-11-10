@@ -1,9 +1,9 @@
 import { App, Modal, Setting } from "obsidian";
 
 export class InitialRebuildModal extends Modal {
-	private onConfirm: () => void;
+	private onConfirm: () => Promise<void> | void;
 
-	constructor(app: App, onConfirm: () => void) {
+	constructor(app: App, onConfirm: () => Promise<void> | void) {
 		super(app);
 		this.onConfirm = onConfirm;
 	}
@@ -23,9 +23,9 @@ export class InitialRebuildModal extends Modal {
 				button
 					.setButtonText("Start Indexing")
 					.setCta()
-					.onClick(() => {
+					.onClick(async () => {
 						this.close();
-						this.onConfirm();
+						await this.onConfirm();
 					})
 			)
 			.addButton((button) =>
