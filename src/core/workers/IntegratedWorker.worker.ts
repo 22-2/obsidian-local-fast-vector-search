@@ -1,5 +1,5 @@
 // アンチドートコード: @huggingface/transformers がロードされる前に 'process' を無力化する
-// 他のプラグインによる configurable: false の process オブジェクトの汚染に対処
+
 if (typeof (self as any).process !== "undefined" && (self as any).process.env) {
 	console.log(
 		'[VectorPlugin Worker] Detected a potentially conflicting "process" object. Attempting neutralization...'
@@ -189,57 +189,129 @@ async function getPGliteResources(): Promise<{
 	let db: IDBPDatabase | undefined;
 
 	try {
+		postLogMessage("verbose", `Opening IndexedDB: ${IDB_NAME_RESOURCES}`);
 		db = await openDB(IDB_NAME_RESOURCES, 1, {
 			upgrade(db) {
 				if (!db.objectStoreNames.contains(IDB_STORE_NAME_RESOURCES)) {
+					postLogMessage(
+						"verbose",
+						`Creating object store: ${IDB_STORE_NAME_RESOURCES}`
+					);
 					db.createObjectStore(IDB_STORE_NAME_RESOURCES);
 				}
 			},
 		});
+		postLogMessage("verbose", `IndexedDB opened successfully.`);
 
 		for (const [resourceName, resourceInfo] of Object.entries(resources)) {
 			postLogMessage(
 				"info",
 				`Loading PGlite resource: ${resourceName}...`
 			);
-			let cachedData: ArrayBuffer | undefined = await db.get(
-				IDB_STORE_NAME_RESOURCES,
-				resourceInfo.key
-			);
-
-			if (cachedData) {
-				postLogMessage("verbose", `${resourceName} found in cache.`);
-			} else {
-				postLogMessage(
-					"info",
-					`${resourceName} not in cache, downloading...`
-				);
-				const response = await fetch(resourceInfo.url);
-				if (!response.ok) {
-					throw new Error(
-						`Failed to download ${resourceName}: Status ${response.status}`
-					);
-				}
-				cachedData = await response.arrayBuffer();
-				await db.put(
+			try {
+				let cachedData: ArrayBuffer | undefined = await db.get(
 					IDB_STORE_NAME_RESOURCES,
-					cachedData,
 					resourceInfo.key
 				);
+
+				if (cachedData) {
+					postLogMessage(
+						"verbose",
+						`${resourceName} found in cache (${(
+							cachedData.byteLength /
+							1024 /
+							1024
+						).toFixed(2)} MB).`
+					);
+				} else {
+					postLogMessage(
+						"info",
+						`${resourceName} not in cache, downloading from ${
+							(resourceInfo as any).url
+						}...`
+					);
+					const fetchStartTime = performance.now();
+					const response = await fetch((resourceInfo as any).url);
+					if (!response.ok) {
+						throw new Error(
+							`Failed to download ${resourceName}: HTTP ${response.status} ${response.statusText}`
+						);
+					}
+					cachedData = await response.arrayBuffer();
+					const fetchDuration = (
+						(performance.now() - fetchStartTime) /
+						1000
+					).toFixed(2);
+					postLogMessage(
+						"verbose",
+						`${resourceName} downloaded in ${fetchDuration}s (${(
+							cachedData.byteLength /
+							1024 /
+							1024
+						).toFixed(2)} MB). Caching...`
+					);
+					const cacheStartTime = performance.now();
+					await db.put(
+						IDB_STORE_NAME_RESOURCES,
+						cachedData,
+						resourceInfo.key
+					);
+					const cacheDuration = (
+						(performance.now() - cacheStartTime) /
+						1000
+					).toFixed(2);
+					postLogMessage(
+						"verbose",
+						`${resourceName} cached in ${cacheDuration}s.`
+					);
+				}
+
+				try {
+					postLogMessage("verbose", `Processing ${resourceName}...`);
+					loadedResources[resourceName] = await (
+						resourceInfo as any
+					).process(cachedData);
+					postLogMessage(
+						"verbose",
+						`${resourceName} processed successfully.`
+					);
+				} catch (processError: any) {
+					postLogMessage(
+						"error",
+						`Failed to process ${resourceName}:`,
+						{
+							message: processError.message,
+							stack: processError.stack,
+						}
+					);
+					throw new Error(
+						`Failed to process ${resourceName}: ${processError.message}`
+					);
+				}
+			} catch (resourceError: any) {
 				postLogMessage(
-					"verbose",
-					`${resourceName} downloaded and cached.`
+					"error",
+					`Error loading PGlite resource ${resourceName}:`,
+					{
+						message: resourceError.message,
+						stack: resourceError.stack,
+						key: (resourceInfo as any).key,
+					}
 				);
+				throw resourceError;
 			}
-			loadedResources[resourceName] = await resourceInfo.process(
-				cachedData
-			);
 		}
 	} catch (error) {
-		postLogMessage("error", "Error loading PGlite resources:", error);
+		postLogMessage("error", "Error loading PGlite resources:", {
+			message: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
 		throw error;
 	} finally {
-		if (db) db.close();
+		if (db) {
+			postLogMessage("verbose", "Closing IndexedDB connection.");
+			db.close();
+		}
 	}
 
 	return {
@@ -268,83 +340,305 @@ async function initialize(): Promise<boolean> {
 	try {
 		// Transformers.js モデルのロードロジック
 		postLogMessage("info", "Starting model download/load...");
-		const transformers = await import("@huggingface/transformers");
-		Tensor = transformers.Tensor;
-		const AutoModel = transformers.AutoModel;
-		const AutoTokenizer = transformers.AutoTokenizer;
+
+		let transformers: any;
+		try {
+			postLogMessage(
+				"verbose",
+				"Importing @huggingface/transformers module..."
+			);
+			transformers = await import("@huggingface/transformers");
+			postLogMessage(
+				"verbose",
+				`Successfully imported transformers. Available exports: ${Object.keys(
+					transformers
+				).join(", ")}`
+			);
+		} catch (importError: any) {
+			postLogMessage(
+				"error",
+				"Failed to import @huggingface/transformers module:",
+				{
+					message: importError.message,
+					stack: importError.stack,
+					name: importError.name,
+				}
+			);
+			throw new Error(
+				`Transformers import failed: ${importError.message}`
+			);
+		}
+
+		let AutoModel: any, AutoTokenizer: any;
+		try {
+			Tensor = transformers.Tensor;
+			AutoModel = transformers.AutoModel;
+			AutoTokenizer = transformers.AutoTokenizer;
+
+			if (!AutoModel) {
+				throw new Error("AutoModel not found in transformers module");
+			}
+			if (!AutoTokenizer) {
+				throw new Error(
+					"AutoTokenizer not found in transformers module"
+				);
+			}
+			if (!Tensor) {
+				throw new Error("Tensor not found in transformers module");
+			}
+			postLogMessage(
+				"verbose",
+				"All required transformers components successfully extracted."
+			);
+		} catch (componentError: any) {
+			postLogMessage(
+				"error",
+				"Failed to extract transformers components:",
+				{
+					message: componentError.message,
+					stack: componentError.stack,
+				}
+			);
+			throw componentError;
+		}
+
+		const modelName = "cfsdwe/static-embedding-japanese-ONNX-for-js";
+
+		// 進捗コールバック用の状態管理
+		let lastProgressLog = 0;
+		const progressThreshold = 10; // 10%以上の進捗で出力
+		let lastLoggedProgress = 0;
+
+		const modelConfig = {
+			config: {
+				model_type: "bert",
+			},
+			device: "auto",
+			dtype: "q8",
+			progress_callback: (progress: any) => {
+				// 最初のログと最後のログ、および10%単位での進捗ログのみ送信
+				if (progress.progress === undefined) {
+					// ファイル情報などの最初のログのみ送信
+					if (lastProgressLog === 0) {
+						postMessage({ type: "progress", payload: progress });
+						postLogMessage(
+							"verbose",
+							`Starting to load: ${
+								progress.file || progress.name
+							}`
+						);
+						lastProgressLog = 1;
+					}
+				} else {
+					const currentProgress =
+						Math.floor(progress.progress / progressThreshold) *
+						progressThreshold;
+					if (
+						currentProgress >=
+							lastLoggedProgress + progressThreshold ||
+						progress.progress >= 99
+					) {
+						// 10%以上の進捗で出力、または最終段階
+						postMessage({ type: "progress", payload: progress });
+						postLogMessage(
+							"verbose",
+							`Model loading progress: ${progress.progress.toFixed(
+								1
+							)}%`
+						);
+						lastLoggedProgress = currentProgress;
+					}
+				}
+			},
+		};
 
 		const modelStartTime = performance.now();
-		model = await AutoModel.from_pretrained(
-			"cfsdwe/static-embedding-japanese-ONNX-for-js",
-			{
-				//@ts-ignore
-				config: {
-					model_type: "bert",
-				},
-				device: "wasm",
-				dtype: "q8",
-				progress_callback: (progress: any) => {
-					postMessage({ type: "progress", payload: progress });
-				},
-			}
-		);
-		const modelEndTime = performance.now();
-		postLogMessage(
-			"verbose",
-			`Model loaded in ${((modelEndTime - modelStartTime) / 1000).toFixed(
-				2
-			)} seconds.`
-		);
+		try {
+			postLogMessage("info", `Loading model: ${modelName}`);
+			postLogMessage(
+				"verbose",
+				`Model config: ${JSON.stringify(modelConfig)}`
+			);
+			model = await AutoModel.from_pretrained(modelName, modelConfig);
+			const modelEndTime = performance.now();
+			const loadDuration = (
+				(modelEndTime - modelStartTime) /
+				1000
+			).toFixed(2);
+			postLogMessage(
+				"info",
+				`Model loaded successfully in ${loadDuration} seconds`
+			);
+			postLogMessage(
+				"verbose",
+				`Model type: ${model?.constructor?.name || "unknown"}`
+			);
+		} catch (modelError: any) {
+			const modelDuration = (
+				(performance.now() - modelStartTime) /
+				1000
+			).toFixed(2);
+			postLogMessage(
+				"error",
+				`Model loading failed after ${modelDuration} seconds:`,
+				{
+					modelName,
+					message: modelError.message,
+					stack: modelError.stack,
+					name: modelError.name,
+					config: modelConfig,
+				}
+			);
+			throw new Error(`Model loading failed: ${modelError.message}`);
+		}
 
 		postLogMessage("info", "Starting tokenizer download/load...");
 		const tokenizerStartTime = performance.now();
-		tokenizer = await AutoTokenizer.from_pretrained(
-			"cfsdwe/static-embedding-japanese-ONNX-for-js"
-		);
-		const tokenizerEndTime = performance.now();
-		postLogMessage(
-			"verbose",
-			`Tokenizer loaded in ${(
+		try {
+			postLogMessage("verbose", `Loading tokenizer: ${modelName}`);
+			tokenizer = await AutoTokenizer.from_pretrained(modelName);
+			const tokenizerEndTime = performance.now();
+			const tokenizerDuration = (
 				(tokenizerEndTime - tokenizerStartTime) /
 				1000
-			).toFixed(2)} seconds.`
-		);
+			).toFixed(2);
+			postLogMessage(
+				"info",
+				`Tokenizer loaded successfully in ${tokenizerDuration} seconds`
+			);
+			postLogMessage(
+				"verbose",
+				`Tokenizer type: ${tokenizer?.constructor?.name || "unknown"}`
+			);
+		} catch (tokenizerError: any) {
+			const tokenizerDuration = (
+				(performance.now() - tokenizerStartTime) /
+				1000
+			).toFixed(2);
+			postLogMessage(
+				"error",
+				`Tokenizer loading failed after ${tokenizerDuration} seconds:`,
+				{
+					modelName,
+					message: tokenizerError.message,
+					stack: tokenizerError.stack,
+					name: tokenizerError.name,
+				}
+			);
+			throw new Error(
+				`Tokenizer loading failed: ${tokenizerError.message}`
+			);
+		}
 
 		// PGliteの初期化ロジック
 		postLogMessage("info", "Initializing PGlite...");
-		const resources = await getPGliteResources();
+		let resources: any;
+		try {
+			postLogMessage("verbose", "Loading PGlite resources...");
+			resources = await getPGliteResources();
+			postLogMessage("verbose", "PGlite resources loaded successfully.");
+		} catch (resourceError: any) {
+			postLogMessage("error", "Failed to load PGlite resources:", {
+				message: resourceError.message,
+				stack: resourceError.stack,
+			});
+			throw new Error(
+				`PGlite resource loading failed: ${resourceError.message}`
+			);
+		}
+
 		vectorExtensionBundleURL = resources.vectorExtensionBundlePath;
 
 		const dbPath = `idb://${DB_NAME}`;
 		postLogMessage("info", `Creating PGlite instance for ${dbPath}`);
 
-		pgliteInstance = (await PGlite.create(dbPath, {
-			relaxedDurability: true,
-			fsBundle: resources.fsBundle,
-			fs: new IdbFs(DB_NAME),
-			wasmModule: resources.wasmModule,
-			extensions: {
-				vector: resources.vectorExtensionBundlePath,
-			},
-		})) as PGlite;
-		postLogMessage("info", "PGlite instance created.");
+		try {
+			postLogMessage("verbose", "PGlite creation options:", {
+				dbPath,
+				relaxedDurability: true,
+				device: "idb",
+				fsType: "IdbFs",
+			});
+			const pgLiteCreateStart = performance.now();
+			pgliteInstance = (await PGlite.create(dbPath, {
+				relaxedDurability: true,
+				fsBundle: resources.fsBundle,
+				fs: new IdbFs(DB_NAME),
+				wasmModule: resources.wasmModule,
+				extensions: {
+					vector: resources.vectorExtensionBundlePath,
+				},
+			})) as PGlite;
+			const pgLiteCreateDuration = (
+				(performance.now() - pgLiteCreateStart) /
+				1000
+			).toFixed(2);
+			postLogMessage(
+				"info",
+				`PGlite instance created successfully in ${pgLiteCreateDuration}s.`
+			);
+		} catch (pgLiteError: any) {
+			postLogMessage("error", "Failed to create PGlite instance:", {
+				dbPath,
+				message: pgLiteError.message,
+				stack: pgLiteError.stack,
+				name: pgLiteError.name,
+			});
+			throw new Error(`PGlite creation failed: ${pgLiteError.message}`);
+		}
 
 		// スキーマ設定ロジック
 		const tableName = EMBEDDINGS_TABLE_NAME;
 		const dimensions = EMBEDDINGS_DIMENSIONS;
 
-		await pgliteInstance.exec(SQL_QUERIES.SET_ENVIRONMENT);
-		postLogMessage("info", "Database environment set.");
+		try {
+			postLogMessage("verbose", "Setting database environment...");
+			await pgliteInstance.exec(SQL_QUERIES.SET_ENVIRONMENT);
+			postLogMessage("info", "Database environment set.");
+		} catch (envError: any) {
+			postLogMessage("error", "Failed to set database environment:", {
+				message: envError.message,
+				stack: envError.stack,
+			});
+			throw envError;
+		}
 
-		await pgliteInstance.exec(SQL_QUERIES.CREATE_EXTENSION);
-		postLogMessage("info", "Vector extension ensured.");
+		try {
+			postLogMessage("verbose", "Creating vector extension...");
+			await pgliteInstance.exec(SQL_QUERIES.CREATE_EXTENSION);
+			postLogMessage("info", "Vector extension ensured.");
+		} catch (extError: any) {
+			postLogMessage("error", "Failed to create vector extension:", {
+				message: extError.message,
+				stack: extError.stack,
+			});
+			throw extError;
+		}
 
-		const createTableSql = SQL_QUERIES.CREATE_TABLE.replace(
-			"$1",
-			quoteIdentifier(tableName)
-		).replace("$2", dimensions.toString());
-		await pgliteInstance.exec(createTableSql);
-		postLogMessage("info", `Table ${tableName} ensured.`);
+		try {
+			postLogMessage(
+				"verbose",
+				`Creating table ${tableName} with ${dimensions} dimensions...`
+			);
+			const createTableSql = SQL_QUERIES.CREATE_TABLE.replace(
+				"$1",
+				quoteIdentifier(tableName)
+			).replace("$2", dimensions.toString());
+			postLogMessage(
+				"verbose",
+				`Table creation SQL: ${createTableSql.substring(0, 100)}...`
+			);
+			await pgliteInstance.exec(createTableSql);
+			postLogMessage("info", `Table ${tableName} ensured.`);
+		} catch (tableError: any) {
+			postLogMessage("error", `Failed to create table ${tableName}:`, {
+				message: tableError.message,
+				stack: tableError.stack,
+				tableName,
+				dimensions,
+			});
+			throw tableError;
+		}
 
 		isDbInitialized = true;
 
@@ -356,14 +650,33 @@ async function initialize(): Promise<boolean> {
 
 		return true;
 	} catch (error: any) {
+		const errorDetails = {
+			message: error?.message || String(error),
+			stack: error?.stack,
+			name: error?.name,
+			cause: error?.cause,
+			code: error?.code,
+			timestamp: new Date().toISOString(),
+		};
 		postLogMessage(
 			"error",
 			"IntegratedWorker initialization failed:",
-			error
+			errorDetails
 		);
 		if (vectorExtensionBundleURL) {
-			URL.revokeObjectURL(vectorExtensionBundleURL.href);
-			postLogMessage("info", "Revoked Blob URL for vector extension.");
+			try {
+				URL.revokeObjectURL(vectorExtensionBundleURL.href);
+				postLogMessage(
+					"info",
+					"Revoked Blob URL for vector extension."
+				);
+			} catch (revokeError: any) {
+				postLogMessage(
+					"warn",
+					"Failed to revoke Blob URL:",
+					revokeError.message
+				);
+			}
 		}
 		return false;
 	} finally {
