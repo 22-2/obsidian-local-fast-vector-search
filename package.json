@@ -38,7 +38,7 @@
 	},
 	"dependencies": {
 		"@electric-sql/pglite": "0.2.14",
-		"@huggingface/transformers": "3.4.2",
+		"@huggingface/transformers": "3.7.6",
 		"esbuild-plugin-inline-worker": "^0.1.1",
 		"idb": "^8.0.3",
 		"sentence-splitter": "^5.0.0"
