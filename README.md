@@ -14,7 +14,7 @@
 
 ### セマンティック検索 (Search similar notes)
 
-に入力した単語と関連性の高いチャンクが類似度順に表示されます。
+入力した単語と関連性の高いチャンクが類似度順に表示されます。
 
 **実験的機能：ベクトルの減算**
 検索クエリから特定の要素を除く、といった高度な検索が可能です。(例: "料理レシピ -中華風" で中華要素の少ない料理レシピを検索)
@@ -30,8 +30,8 @@
 4. `Index rebuild process completed successfully!` の通知の表示でインデックス作成が完了。
 
 > [!Warning]
->  **iOS デバイスでの注意**
-> 
+> **iOS デバイスでの注意**
+>
 > iOS デバイスでは、[Self-hosted LiveSync プラグイン](https://github.com/vrtmrz/obsidian-livesync) が先に起動している場合、モデルのロードができない現象が発生しています。詳細は現在調査中ですが、以下の方法でエラーを回避することができます。
 >
 > -   **初回インデックス作成時**
@@ -41,5 +41,3 @@
 
 [^1]: **iOS デバイスでの注意**を参照
 [^2]: `hotchpotch/static-embedding-japanese` を `transformers.js` で[すぐに扱えるように整理を行いました。](https://huggingface.co/cfsdwe/static-embedding-japanese-ONNX-for-js)
-
-
