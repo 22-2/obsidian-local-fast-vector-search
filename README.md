@@ -24,10 +24,10 @@
 
 ## ダウンロード•セットアップ
 
-1. [BRAT](https://github.com/TfTHacker/obsidian42-brat) に `https://github.com/uoFishbox/obsidian-local-fast-vector-search` を追加してダウンロード。
-2. 有効化後に表示されるモーダル上の `Start indexing` を選択。
-3. 初回のみ、必要なリソースのダウンロードが開始。ダウンロード完了後、Obsidian が自動でリスタートし、すべてのノートのインデックス作成がバックグラウンドで開始。
-4. `Index rebuild process completed successfully!` の通知の表示でインデックス作成が完了。
+1. [BRAT](https://github.com/TfTHacker/obsidian42-brat) に `https://github.com/uoFishbox/obsidian-local-fast-vector-search` を追加してインストールする。
+2. 有効化後に表示されるモーダル上の `Start indexing` を選択する。
+3. 初回のみ、必要なリソースのダウンロードが開始される。ダウンロード完了後、Obsidian が自動でリスタートし、すべてのノートのインデックス作成がバックグラウンドで開始される。
+4. `Index rebuild process completed successfully!` の通知の表示でインデックスの作成が完了し、その後は自動的に追加•更新される。
 
 > [!WARNING]
 > **iOS デバイスでの注意**
@@ -41,5 +41,6 @@
 
 [^1]: **iOS デバイスでの注意**を参照
 [^2]: `hotchpotch/static-embedding-japanese` を `transformers.js` で[すぐに扱えるように整理を行いました。](https://huggingface.co/cfsdwe/static-embedding-japanese-ONNX-for-js)
+
 
 
