@@ -318,7 +318,8 @@ async function initialize(): Promise<boolean> {
 			"IntegratedWorker initialization completed. Model and DB ready."
 		);
 
-		(self as any).process = originalProcess; // 元の process を復元
+		// ↓ iOSでは、プラグインの相性でエラーの原因になる可能性があるためコメントアウト
+		// (self as any).process = originalProcess; // 元の process を復元
 		return true;
 	} catch (error: any) {
 		postLogMessage(
