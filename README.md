@@ -1,8 +1,8 @@
-# Obsidian Local Fast Vector Search Plugin
+# Local Fast Vector Search Plugin
 
 ## 概要
 
-Obsidian 内で [StaticEmbedding モデル](https://huggingface.co/blog/static-embeddings) を推論し、ノートのベクトル化・ベクトル検索や関連ノートのサジェストを高速に行うプラグインです。ミドルレンジ程度の CPU 性能でも比較的軽快に動作します。 Windows, Android, iOS [^1] 環境で動作確認済みです。
+[Obsidian](https://obsidian.md/) 内で [StaticEmbedding モデル](https://huggingface.co/blog/static-embeddings) を推論し、ノートのベクトル化・ベクトル検索や関連ノートのサジェストを高速に行うプラグインです。ミドルレンジ程度の CPU 性能でも比較的軽快に動作します。 Windows, Android, iOS [^1] 環境で動作確認済みです。
 
 このプラグインでは、ベクトル化に用いるテキスト埋め込みモデルとして、日本語に特化した StaticEmbedding モデルである [`hotchpotch/static-embedding-japanese`](https://huggingface.co/hotchpotch/static-embedding-japanese) を利用しています。 [^2]
 
