@@ -5,9 +5,6 @@ if (typeof (self as any).process !== "undefined" && (self as any).process.env) {
 		'[VectorPlugin Worker] Detected a potentially conflicting "process" object. Attempting neutralization...'
 	);
 	try {
-		// プロパティが configurable: false だと delete や Object.defineProperty は失敗する。
-		// しかし、writable: true であれば、値を上書きすることは可能。
-		// 念のため元のオブジェクトを別名で保持してから、元のプロパティを undefined で上書きする。
 		(self as any)._UNSAFE_process_polyfill = (self as any).process;
 		(self as any).process = undefined;
 
@@ -16,7 +13,6 @@ if (typeof (self as any).process !== "undefined" && (self as any).process.env) {
 				'[VectorPlugin Worker] "process" object successfully neutralized by overwriting with undefined.'
 			);
 		} else {
-			// 上書きすら失敗した場合（writable: false）、これはもうどうしようもない最終手段
 			console.warn(
 				'[VectorPlugin Worker] Failed to overwrite "process" object. The environment is heavily constrained.'
 			);
