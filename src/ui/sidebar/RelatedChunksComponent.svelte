@@ -370,24 +370,28 @@
 				onmouseover={(e) => handleMouseOver(e, filePath)}
 				onfocus={(e) => handleMouseOver(e, filePath)}
 				data-href={filePath}
+				onclick={() => openNote(filePath)}
+				onkeydown={(e) => e.key === "Enter" && openNote(filePath)}
 			>
 				<div
 					class="tree-item-icon collapse-icon"
 					class:is-collapsed={!isExpanded}
 					role="button"
 					tabindex="0"
-					onclick={() => toggleFile(filePath)}
-					onkeydown={(e) => e.key === "Enter" && toggleFile(filePath)}
+					onclick={(e) => {
+						e.stopPropagation();
+						toggleFile(filePath);
+					}}
+					onkeydown={(e) => {
+						if (e.key === "Enter") {
+							e.stopPropagation();
+							toggleFile(filePath);
+						}
+					}}
 				>
 					{@html collapseIconSvg || ``}
 				</div>
-				<div
-					class="related-chunks-file-name tree-item-inner"
-					role="button"
-					tabindex="0"
-					onclick={() => openNote(filePath)}
-					onkeydown={(e) => e.key === "Enter" && openNote(filePath)}
-				>
+				<div class="related-chunks-file-name tree-item-inner">
 					{getFileName(filePath)}
 				</div>
 				<div class="tree-item-flair-outer">
