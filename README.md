@@ -29,7 +29,7 @@ Modal に入力した単語と関連性の高いチャンクが類似度に表�
 3. 初回のみ、必要なリソースのダウンロードが開始。ダウンロード完了後、Obsidian が自動でリスタートし、すべてのノートのインデックス作成がバックグラウンドで開始。
 4. `Index rebuild process completed successfully!` の通知の表示でインデックス作成が完了。
 
-> [!iOS デバイスでの注意]
+> [!Warning] **iOS デバイスでの注意**
 > iOS デバイスでは、[Self-hosted LiveSync プラグイン](https://github.com/vrtmrz/obsidian-livesync) が先に起動している場合、モデルのロードができない現象が発生しています。詳細は現在調査中ですが、以下の方法でエラーを回避することができます。
 >
 > -   **初回インデックス作成時**
