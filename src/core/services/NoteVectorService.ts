@@ -95,7 +95,7 @@ export class NoteVectorService {
 	public async findSimilarChunks(
 		noteVector: number[],
 		limit: number,
-		excludeFilePath?: string
+		excludeFilePaths: string[] = []
 	): Promise<SimilarityResultItem[]> {
 		if (!noteVector || noteVector.length === 0) {
 			return [];
@@ -104,8 +104,8 @@ export class NoteVectorService {
 			const results = await this.workerProxy.searchSimilarByVector(
 				noteVector,
 				limit,
-				excludeFilePath
-					? { excludeFilePaths: [excludeFilePath] }
+				excludeFilePaths.length > 0
+					? { excludeFilePaths: excludeFilePaths }
 					: undefined
 			);
 			return results;

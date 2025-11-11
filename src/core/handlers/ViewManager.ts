@@ -188,13 +188,42 @@ export class ViewManager {
 					activeFile
 				);
 				if (noteVector) {
+					const excludeFilePaths = new Set<string>();
+					excludeFilePaths.add(activeFile.path);
+
+					if (this.settings.excludeOutgoingLinksFromRelatedChunks) {
+						const fileCache =
+							this.app.metadataCache.getFileCache(activeFile);
+						if (fileCache?.links) {
+							for (const link of fileCache.links) {
+								const linkedFile =
+									this.app.metadataCache.getFirstLinkpathDest(
+										link.link,
+										activeFile.path
+									);
+								if (linkedFile) {
+									excludeFilePaths.add(linkedFile.path);
+								}
+							}
+						}
+					}
+
+					if (this.settings.excludeBacklinksFromRelatedChunks) {
+						const backlinks =
+							this.app.metadataCache.getBacklinksForFile(
+								activeFile
+							);
+						for (const sourcePath of Object.keys(backlinks.data)) {
+							excludeFilePaths.add(sourcePath);
+						}
+					}
+
 					const searchResults =
 						await noteVectorService.findSimilarChunks(
 							noteVector,
 							this.settings.relatedChunksResultLimit,
-							activeFile.path
+							Array.from(excludeFilePaths)
 						);
-
 					if (sidebarLeaves.length > 0) {
 						const sidebarView = sidebarLeaves[0]
 							.view as RelatedChunksView;

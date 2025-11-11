@@ -6,6 +6,8 @@ export interface PluginSettings {
 	autoShowRelatedChunksSidebar: boolean;
 	expandRelatedChunksFileGroups: boolean;
 	excludeHeadersInVectorization: boolean;
+	excludeOutgoingLinksFromRelatedChunks: boolean;
+	excludeBacklinksFromRelatedChunks: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -16,4 +18,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	autoShowRelatedChunksSidebar: true,
 	expandRelatedChunksFileGroups: true,
 	excludeHeadersInVectorization: true,
+	excludeOutgoingLinksFromRelatedChunks: true,
+	excludeBacklinksFromRelatedChunks: true,
 };

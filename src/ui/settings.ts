@@ -148,6 +148,41 @@ export class VectorizerSettingTab extends PluginSettingTab {
 					})
 			);
 
+		new Setting(containerEl)
+			.setName("Exclude Outgoing Links from Related Chunks")
+			.setDesc(
+				"Exclude notes that the current note links to from the related chunks search results."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(
+						this.plugin.settings
+							.excludeOutgoingLinksFromRelatedChunks
+					)
+					.onChange(async (value) => {
+						this.plugin.settings.excludeOutgoingLinksFromRelatedChunks =
+							value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Exclude Backlinks from Related Chunks")
+			.setDesc(
+				"Exclude notes that link to the current note from the related chunks search results."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(
+						this.plugin.settings.excludeBacklinksFromRelatedChunks
+					)
+					.onChange(async (value) => {
+						this.plugin.settings.excludeBacklinksFromRelatedChunks =
+							value;
+						await this.plugin.saveSettings();
+					})
+			);
+
 		containerEl.createEl("h2", { text: "Vectorization" });
 
 		new Setting(containerEl)
