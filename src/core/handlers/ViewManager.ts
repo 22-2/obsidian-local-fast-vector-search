@@ -2,6 +2,7 @@ import { App, WorkspaceLeaf, MarkdownView } from "obsidian";
 import { LoggerService } from "../../shared/services/LoggerService";
 import { NotificationService } from "../../shared/services/NotificationService";
 import { NoteVectorService } from "../services/NoteVectorService";
+import { SearchService } from "../services/SearchService";
 import {
 	RelatedChunksView,
 	VIEW_TYPE_RELATED_CHUNKS,
@@ -16,6 +17,7 @@ export class ViewManager {
 		private logger: LoggerService | null,
 		private settings: PluginSettings,
 		private getNoteVectorService: () => NoteVectorService | null,
+		private getSearchService: () => SearchService | null,
 		private notificationService: NotificationService | null
 	) {}
 
@@ -140,6 +142,51 @@ export class ViewManager {
 		} catch (error) {
 			this.logger?.error("Failed to create fallback leaf:", error);
 			return null;
+		}
+	}
+
+	async searchAndDisplayInSidebar(query: string): Promise<void> {
+		this.logger?.verbose_log(
+			`Searching for similar chunks for query: "${query}"`
+		);
+
+		const searchService = this.getSearchService();
+		if (!searchService) {
+			this.notificationService?.showNotice(
+				"Search service is not ready."
+			);
+			return;
+		}
+
+		try {
+			await this.activateRelatedChunksView();
+
+			const sidebarLeaves = this.app.workspace.getLeavesOfType(
+				VIEW_TYPE_RELATED_CHUNKS
+			);
+			const view =
+				sidebarLeaves.length > 0
+					? (sidebarLeaves[0].view as RelatedChunksView)
+					: null;
+
+			if (view) {
+				view.setLoadingState(query);
+			}
+
+			const results = await searchService.search(
+				query,
+				undefined,
+				this.settings.relatedChunksResultLimit
+			);
+
+			if (view) {
+				view.displaySearchResults(query, results);
+			}
+		} catch (error) {
+			this.logger?.error("Error during sidebar search:", error);
+			this.notificationService?.showNotice(
+				"Failed to perform search. Check console."
+			);
 		}
 	}
 

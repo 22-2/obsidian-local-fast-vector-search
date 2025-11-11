@@ -11,12 +11,18 @@
 		relatedChunks = $bindable([]),
 		onChunkClick,
 		getChunkPreview,
+		isSearchResultsMode = $bindable(false),
+		searchQuery = $bindable(null),
+		onBackClick,
 	}: {
 		plugin: LocalFastVectorizePlugin;
 		activeNoteName: string | null;
 		relatedChunks: SimilarityResultItem[];
 		onChunkClick: (item: SimilarityResultItem) => Promise<void>;
 		getChunkPreview: (item: SimilarityResultItem) => Promise<string>;
+		isSearchResultsMode: boolean;
+		searchQuery: string | null;
+		onBackClick: () => Promise<void>;
 	} = $props();
 
 	type FileGroup = [string, SimilarityResultItem[]];
@@ -34,13 +40,19 @@
 	>(new Map());
 	let chunkDisplayQueues = $state<Map<string, ChunkQueue>>(new Map());
 	let collapseIconSvg = $state("");
+	let backIconSvg = $state("");
 	let isDisplaying = $state(false);
 	let pendingDisplay = $state<(() => void) | null>(null);
 	let expandedFiles = $state<Set<string>>(new Set());
 
 	const hasActiveNote = $derived(Boolean(activeNoteName));
 	const hasChunks = $derived(allGroupedChunks.size > 0);
-	const showEmptyState = $derived(!hasChunks);
+	const showEmptyState = $derived(
+		!hasChunks && (hasActiveNote || isSearchResultsMode),
+	);
+	const showWelcomeState = $derived(
+		!hasChunks && !hasActiveNote && !isSearchResultsMode,
+	);
 
 	onMount(() => {
 		initializeIcon();
@@ -61,6 +73,10 @@
 		const iconElement = getIcon("right-triangle");
 		if (iconElement) {
 			collapseIconSvg = iconElement.outerHTML;
+		}
+		const backIcon = getIcon("arrow-left");
+		if (backIcon) {
+			backIconSvg = backIcon.outerHTML;
 		}
 	}
 
@@ -343,17 +359,29 @@
 </script>
 
 <div class="related-chunks-container search-result-container">
-	{#if hasActiveNote}
-		<div class="related-chunks-header">
-			Related to {activeNoteName}
+	{#if isSearchResultsMode}
+		<div class="related-chunks-header search-results-header">
+			<button
+				class="back-button clickable-icon"
+				onclick={onBackClick}
+				aria-label="Back"
+			>
+				{@html backIconSvg}
+			</button>
+			<div class="search-results-title">
+				Results for "{searchQuery}"
+			</div>
 		</div>
+	{:else if hasActiveNote}
+		<div class="related-chunks-header">Related to {activeNoteName}</div>
 	{/if}
 
 	{#if showEmptyState}
+		<div class="related-chunks-empty">No related chunks found.</div>
+	{:else if showWelcomeState}
 		<div class="related-chunks-empty">
-			{hasActiveNote
-				? "No related chunks found."
-				: "Open a note to see related chunks."}
+			Open a note to see related chunks, or select text and right-click to
+			search.
 		</div>
 	{/if}
 
@@ -420,6 +448,37 @@
 </div>
 
 <style>
+	.related-chunks-header {
+		padding: var(--size-2-3) var(--size-4-2);
+		font-weight: var(--font-bold);
+		border-bottom: 1px solid var(--background-modifier-border);
+	}
+	.search-results-header {
+		display: flex;
+		align-items: center;
+		gap: var(--size-2-2);
+	}
+	.back-button {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: var(--size-2-1);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-s);
+		color: var(--icon-color);
+	}
+	.back-button:hover {
+		background-color: var(--background-modifier-hover);
+	}
+	.search-results-title {
+		font-weight: bold;
+		flex-grow: 1;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 	.related-chunks-empty {
 		color: var(--text-muted);
 		padding: var(--size-4-3);

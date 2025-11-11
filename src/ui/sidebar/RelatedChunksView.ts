@@ -16,6 +16,8 @@ export class RelatedChunksView extends ItemView {
 	currentNoteName: string | null = null;
 	currentResults: SimilarityResultItem[] = [];
 	target: HTMLElement | null = null;
+	isSearchResultsMode = false;
+	searchQuery: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: LocalFastVectorizePlugin) {
 		super(leaf);
@@ -63,6 +65,9 @@ export class RelatedChunksView extends ItemView {
 				relatedChunks: this.currentResults,
 				onChunkClick: this.handleChunkClick.bind(this),
 				getChunkPreview: this.getChunkPreview.bind(this),
+				isSearchResultsMode: this.isSearchResultsMode,
+				searchQuery: this.searchQuery,
+				onBackClick: this.handleBackClick.bind(this),
 			},
 		}) as RelatedChunksComponent;
 	}
@@ -86,6 +91,9 @@ export class RelatedChunksView extends ItemView {
 		}
 	}
 	async updateView(noteName: string | null, results: SimilarityResultItem[]) {
+		if (this.isSearchResultsMode) {
+			return;
+		}
 		this.currentNoteName = noteName;
 		this.currentResults = results;
 		this.renderComponent();
@@ -118,6 +126,34 @@ export class RelatedChunksView extends ItemView {
 		this.updateView(null, []);
 	}
 
+	displaySearchResults(query: string, results: SimilarityResultItem[]) {
+		this.isSearchResultsMode = true;
+		this.searchQuery = query;
+		this.currentNoteName = null;
+		this.currentResults = results;
+		this.renderComponent();
+	}
+
+	setLoadingState(query: string) {
+		this.isSearchResultsMode = true;
+		this.searchQuery = query;
+		this.currentNoteName = null;
+		this.currentResults = [];
+		this.renderComponent();
+	}
+
+	async handleBackClick() {
+		this.isSearchResultsMode = false;
+		this.searchQuery = null;
+
+		const activeFile = this.app.workspace.getActiveFile();
+		this.updateView(activeFile?.basename || null, []);
+
+		if (this.plugin.viewManager) {
+			this.plugin.viewManager.resetLastProcessedFile();
+			await this.plugin.viewManager.handleActiveLeafChange();
+		}
+	}
 	private async handleChunkClick(item: SimilarityResultItem) {
 		const file = this.app.vault.getAbstractFileByPath(item.file_path);
 		if (!(file instanceof TFile)) {

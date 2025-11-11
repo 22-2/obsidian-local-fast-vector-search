@@ -5,6 +5,8 @@ import {
 	TAbstractFile,
 	type CachedMetadata,
 	debounce,
+	Editor,
+	Menu,
 } from "obsidian";
 import { LoggerService } from "./shared/services/LoggerService";
 import { deleteDB } from "idb";
@@ -28,7 +30,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 	// Handler instances
 	private resourceInitializer!: ResourceInitializer;
 	private fileEventHandler!: FileEventHandler;
-	private viewManager!: ViewManager;
+	public viewManager!: ViewManager;
 	public commandRegistrar!: CommandRegistrar;
 	private debouncedHandleActiveLeafChange!: () => void;
 
@@ -55,6 +57,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 			this.logger,
 			this.settings,
 			() => this.resourceInitializer.noteVectorService,
+			() => this.resourceInitializer.searchService,
 			this.resourceInitializer.notificationService
 		);
 
@@ -165,6 +168,46 @@ export default class LocalFastVectorizePlugin extends Plugin {
 			this.app.metadataCache.on(
 				"changed",
 				this.fileEventHandler.handleFileChange.bind(
+					this.fileEventHandler
+				)
+			)
+		);
+
+		this.registerEvent(
+			this.app.workspace.on(
+				"editor-menu",
+				(menu: Menu, editor: Editor) => {
+					const selection = editor.getSelection();
+					if (selection) {
+						menu.addItem((item) => {
+							item.setTitle("Search for similar chunks")
+								.setIcon("zoom-in")
+								.onClick(async () => {
+									try {
+										await this.resourceInitializer.ensureResourcesInitialized();
+										await this.viewManager.searchAndDisplayInSidebar(
+											selection
+										);
+									} catch (error) {
+										this.logger?.error(
+											"Failed to perform search from context menu:",
+											error
+										);
+										new Notice(
+											"Failed to perform search. Check console."
+										);
+									}
+								});
+						});
+					}
+				}
+			)
+		);
+
+		this.registerEvent(
+			this.app.metadataCache.on(
+				"deleted",
+				this.fileEventHandler.handleFileDelete.bind(
 					this.fileEventHandler
 				)
 			)
