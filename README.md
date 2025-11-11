@@ -40,7 +40,8 @@
 >     -   [Lazy Plugin Loader](https://github.com/alangrainger/obsidian-lazy-plugins) を利用し、Self-hosted livesync プラグインの起動を 0.5 秒程度遅延させ、Local fast vector search プラグインの起動を `instant` にする
 
 [^1]: **iOS デバイスでの注意**を参照
-[^2]: `hotchpotch/static-embedding-japanese` を `transformers.js` で[すぐに扱えるように整理を行いました。](https://huggingface.co/cfsdwe/static-embedding-japanese-ONNX-for-js)
+[^2]: `hotchpotch/static-embedding-japanese` を `transformers.js` ですぐに扱えるように整理を行いました。→[repository](https://huggingface.co/cfsdwe/static-embedding-japanese-ONNX-for-js)
+
 
 
 
