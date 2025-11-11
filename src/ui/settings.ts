@@ -1,14 +1,14 @@
 import { Plugin, Notice, App, PluginSettingTab, Setting } from "obsidian";
-import MyVectorPlugin from "../main";
+import LocalFastVectorizePlugin from "../main";
 import { DiscardDBModal } from "./modals/DiscardDBModal";
 import { DeleteResourcesModal } from "./modals/DeleteResourcesModal";
 import { RebuildIndexModal } from "./modals/RebuildIndexModal";
 import { RebuildAllIndexesModal } from "./modals/RebuildAllIndexesModal";
 
 export class VectorizerSettingTab extends PluginSettingTab {
-	plugin: MyVectorPlugin;
+	plugin: LocalFastVectorizePlugin;
 
-	constructor(app: App, plugin: MyVectorPlugin) {
+	constructor(app: App, plugin: LocalFastVectorizePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}

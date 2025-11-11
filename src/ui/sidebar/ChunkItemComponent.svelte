@@ -2,7 +2,7 @@
 	import { onMount } from "svelte";
 	import { MarkdownRenderer, Component } from "obsidian";
 	import type { SimilarityResultItem } from "../../core/storage/types";
-	import type MyVectorPlugin from "../../main";
+	import type LocalFastVectorizePlugin from "../../main";
 
 	let {
 		plugin,
@@ -10,7 +10,7 @@
 		onChunkClick,
 		getChunkPreview,
 	}: {
-		plugin: MyVectorPlugin;
+		plugin: LocalFastVectorizePlugin;
 		chunk: SimilarityResultItem;
 		onChunkClick: (item: SimilarityResultItem) => Promise<void>;
 		getChunkPreview: (chunk: SimilarityResultItem) => Promise<string>;

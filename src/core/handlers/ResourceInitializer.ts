@@ -9,7 +9,7 @@ import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
 import { NoteVectorService } from "../services/NoteVectorService";
 import { CommandHandler } from "../../commands";
 import type { PluginSettings } from "../../pluginSettings";
-import type MyVectorPlugin from "../../main";
+import type LocalFastVectorizePlugin from "../../main";
 
 export class ResourceInitializer {
 	private initializationPromise: Promise<void> | null = null;
@@ -28,7 +28,7 @@ export class ResourceInitializer {
 		private app: App,
 		private logger: LoggerService | null,
 		private settings: PluginSettings,
-		private plugin: MyVectorPlugin
+		private plugin: LocalFastVectorizePlugin
 	) {}
 
 	async ensureResourcesInitialized(): Promise<void> {

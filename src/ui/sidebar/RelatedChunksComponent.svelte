@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type MyVectorPlugin from "../../main";
+	import type LocalFastVectorizePlugin from "../../main";
 	import type { SimilarityResultItem } from "../../core/storage/types";
 	import { getIcon } from "obsidian";
 	import ChunkItemComponent from "./ChunkItemComponent.svelte";
@@ -12,7 +12,7 @@
 		onChunkClick,
 		getChunkPreview,
 	}: {
-		plugin: MyVectorPlugin;
+		plugin: LocalFastVectorizePlugin;
 		activeNoteName: string | null;
 		relatedChunks: SimilarityResultItem[];
 		onChunkClick: (item: SimilarityResultItem) => Promise<void>;

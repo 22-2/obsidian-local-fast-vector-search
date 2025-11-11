@@ -1,7 +1,7 @@
 import { ItemView, WorkspaceLeaf, MarkdownView, TFile } from "obsidian";
 import { mount, unmount } from "svelte";
 import RelatedChunksComponent from "./RelatedChunksComponent.svelte";
-import MyVectorPlugin from "../../main";
+import LocalFastVectorizePlugin from "../../main";
 import type { SimilarityResultItem } from "../../core/storage/types";
 import {
 	offsetToPosition,
@@ -11,13 +11,13 @@ import {
 export const VIEW_TYPE_RELATED_CHUNKS = "related-chunks-sidebar";
 
 export class RelatedChunksView extends ItemView {
-	plugin: MyVectorPlugin;
+	plugin: LocalFastVectorizePlugin;
 	component?: RelatedChunksComponent;
 	currentNoteName: string | null = null;
 	currentResults: SimilarityResultItem[] = [];
 	target: HTMLElement | null = null;
 
-	constructor(leaf: WorkspaceLeaf, plugin: MyVectorPlugin) {
+	constructor(leaf: WorkspaceLeaf, plugin: LocalFastVectorizePlugin) {
 		super(leaf);
 		this.plugin = plugin;
 	}

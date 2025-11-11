@@ -21,7 +21,7 @@ import { ViewManager } from "./core/handlers/ViewManager";
 import { CommandRegistrar } from "./core/handlers/CommandRegistrar";
 import { InitialRebuildModal } from "./ui/modals/InitialRebuildModal";
 
-export default class MyVectorPlugin extends Plugin {
+export default class LocalFastVectorizePlugin extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	logger: LoggerService | null = null;
 

@@ -4,7 +4,7 @@ import type { SearchService } from "./core/services/SearchService";
 import type { StorageManagementService } from "./core/services/StorageManagementService";
 import type { SimilarityResultItem } from "./core/storage/types";
 import { NotificationService } from "./shared/services/NotificationService";
-import type MyVectorPlugin from "./main";
+import type LocalFastVectorizePlugin from "./main";
 
 export class CommandHandler {
 	private app: App;
@@ -12,7 +12,7 @@ export class CommandHandler {
 	private searchService: SearchService;
 	private storageManagementService: StorageManagementService;
 	private notificationService: NotificationService;
-	private plugin: MyVectorPlugin;
+	private plugin: LocalFastVectorizePlugin;
 
 	constructor(
 		app: App,
@@ -20,7 +20,7 @@ export class CommandHandler {
 		searchService: SearchService,
 		storageManagementService: StorageManagementService,
 		notificationService: NotificationService,
-		plugin: MyVectorPlugin
+		plugin: LocalFastVectorizePlugin
 	) {
 		this.app = app;
 		this.vectorizationService = vectorizationService;
