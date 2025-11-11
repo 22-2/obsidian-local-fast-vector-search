@@ -98,7 +98,7 @@ export class ResourceInitializer {
 				this.proxy = new IntegratedWorkerProxy(this.logger);
 				this.logger?.verbose_log("IntegratedWorkerProxy created.");
 			}
-			initNotice.setMessage("Initializing integrated worker...");
+			initNotice.setMessage("Initializing worker...");
 			await this.proxy.ensureInitialized();
 			this.logger?.verbose_log("IntegratedWorkerProxy initialized.");
 
