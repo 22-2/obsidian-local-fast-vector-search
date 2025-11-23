@@ -28,7 +28,7 @@ export class IntegratedWorkerProxy {
 	private initializationPromise: Promise<boolean>;
 	private logger: LoggerService | null;
 
-	constructor(logger: LoggerService | null) {
+	constructor(logger: LoggerService | null, dbSuffix?: string) {
 		this.logger = logger;
 
 		// 通常のWorkerを作成（esbuildのインラインWorkerプラグインでバンドルされている）
@@ -81,6 +81,7 @@ export class IntegratedWorkerProxy {
 			this.worker.postMessage({
 				id: crypto.randomUUID(),
 				type: "initialize",
+				payload: { dbSuffix },
 			} as WorkerRequest);
 		});
 	}

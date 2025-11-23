@@ -294,7 +294,8 @@ export default class LocalFastVectorizePlugin extends Plugin {
 			);
 		}
 
-		await deleteDB("/pglite/" + DB_NAME);
+		const dbName = `${DB_NAME}-${this.app.appId}`;
+		await deleteDB("/pglite/" + dbName);
 		this.logger?.verbose_log(
 			"PGlite database files deleted from IndexedDB."
 		);
@@ -340,7 +341,8 @@ export default class LocalFastVectorizePlugin extends Plugin {
 				return false;
 			}
 			const dbs = await indexedDB.databases();
-			return dbs.some((db) => db.name === `/pglite/${DB_NAME}`);
+			const dbName = `${DB_NAME}-${this.app.appId}`;
+			return dbs.some((db) => db.name === `/pglite/${dbName}`);
 		} catch (error) {
 			this.logger?.error(
 				"Failed to check for IndexedDB existence:",

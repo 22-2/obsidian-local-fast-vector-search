@@ -95,7 +95,8 @@ export class ResourceInitializer {
 		try {
 			// 0. Initialize IntegratedWorkerProxy first
 			if (!this.proxy) {
-				this.proxy = new IntegratedWorkerProxy(this.logger);
+				const dbSuffix = this.app.appId;
+				this.proxy = new IntegratedWorkerProxy(this.logger, dbSuffix);
 				this.logger?.verbose_log("IntegratedWorkerProxy created.");
 			}
 			initNotice.setMessage("Initializing worker...");

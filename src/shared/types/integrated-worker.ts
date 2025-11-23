@@ -15,6 +15,7 @@ export interface InitializeRequest extends BaseRequest {
 	type: "initialize";
 	payload?: {
 		settings?: any;
+		dbSuffix?: string;
 	};
 }
 

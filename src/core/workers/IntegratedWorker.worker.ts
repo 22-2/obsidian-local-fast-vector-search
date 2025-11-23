@@ -48,10 +48,12 @@ import type {
 	VectorItem,
 } from "../../core/storage/types";
 import {
-	DB_NAME,
+	DB_NAME as DEFAULT_DB_NAME,
 	EMBEDDINGS_DIMENSIONS,
 	EMBEDDINGS_TABLE_NAME,
 } from "../../shared/constants/appConstants";
+
+let dbName = DEFAULT_DB_NAME;
 import type {
 	PreTrainedModelType,
 	PreTrainedTokenizerType,
@@ -320,7 +322,11 @@ function quoteIdentifier(identifier: string): string {
 	return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-async function initialize(): Promise<boolean> {
+async function initialize(dbSuffix?: string): Promise<boolean> {
+	if (dbSuffix) {
+		dbName = `${DEFAULT_DB_NAME}-${dbSuffix}`;
+		postLogMessage("info", `Using database name: ${dbName}`);
+	}
 	if (isInitialized || isInitializing) {
 		postLogMessage(
 			"info",
@@ -542,7 +548,7 @@ async function initialize(): Promise<boolean> {
 
 		vectorExtensionBundleURL = resources.vectorExtensionBundlePath;
 
-		const dbPath = `idb://${DB_NAME}`;
+		const dbPath = `idb://${dbName}`;
 		postLogMessage("info", `Creating PGlite instance for ${dbPath}`);
 
 		try {
@@ -570,7 +576,7 @@ async function initialize(): Promise<boolean> {
 			const createPromise = PGlite.create(dbPath, {
 				relaxedDurability: true,
 				fsBundle: resources.fsBundle,
-				fs: new IdbFs(DB_NAME),
+				fs: new IdbFs(dbName),
 				wasmModule: resources.wasmModule,
 				extensions: {
 					vector: resources.vectorExtensionBundlePath,
@@ -1221,7 +1227,8 @@ worker.onmessage = async (event: MessageEvent) => {
 	try {
 		switch (type) {
 			case "initialize":
-				const initResult = await initialize();
+				const initPayload = payload as { dbSuffix?: string } | undefined;
+				const initResult = await initialize(initPayload?.dbSuffix);
 				postMessage({
 					id,
 					type: "initialized",
