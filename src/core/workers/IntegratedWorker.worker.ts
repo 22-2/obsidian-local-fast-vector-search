@@ -42,31 +42,30 @@ if (typeof (self as any).process !== "undefined") {
 }
 
 import type {
+	ChunkInfo,
+	SearchOptions,
+	SimilarityResultItem,
+	VectorItem,
+} from "../../core/storage/types";
+import {
+	DB_NAME,
+	EMBEDDINGS_DIMENSIONS,
+	EMBEDDINGS_TABLE_NAME,
+} from "../../shared/constants/appConstants";
+import type {
 	PreTrainedModelType,
 	PreTrainedTokenizerType,
 	TensorType,
 } from "../../shared/types/huggingface";
-import {
-	EMBEDDINGS_DIMENSIONS,
-	DB_NAME,
-	EMBEDDINGS_TABLE_NAME,
-} from "../../shared/constants/appConstants";
 import type {
 	WorkerRequest,
 	WorkerResponse,
 } from "../../shared/types/integrated-worker";
-import type {
-	VectorItem,
-	SearchOptions,
-	ChunkInfo,
-	SimilarityResultItem,
-} from "../../core/storage/types";
 
 import { HNSW_EF_SEARCH } from "../../shared/constants/appConstants";
 
 // PGlite関連のインポート
-import { PGlite, type Transaction } from "@electric-sql/pglite";
-import { IdbFs } from "@electric-sql/pglite";
+import { IdbFs, PGlite, type Transaction } from "@electric-sql/pglite";
 import { type IDBPDatabase, openDB } from "idb";
 import { SQL_QUERIES } from "../storage/pglite/sql-queries";
 
@@ -563,8 +562,12 @@ async function initialize(): Promise<boolean> {
 					"FATAL: 'Response' object is undefined in worker scope!"
 				);
 			}
+
+			postLogMessage("info", "About to call PGlite.create()...");
 			const pgLiteCreateStart = performance.now();
-			pgliteInstance = (await PGlite.create(dbPath, {
+
+			// Add timeout wrapper for PGlite.create
+			const createPromise = PGlite.create(dbPath, {
 				relaxedDurability: true,
 				fsBundle: resources.fsBundle,
 				fs: new IdbFs(DB_NAME),
@@ -572,7 +575,39 @@ async function initialize(): Promise<boolean> {
 				extensions: {
 					vector: resources.vectorExtensionBundlePath,
 				},
-			})) as PGlite;
+			});
+
+			postLogMessage(
+				"verbose",
+				"PGlite.create() called, waiting for completion..."
+			);
+
+			// Add timeout to detect hanging
+			const timeoutPromise = new Promise((_, reject) => {
+				setTimeout(() => {
+					reject(
+						new Error("PGlite.create() timed out after 30 seconds")
+					);
+				}, 30000);
+			});
+
+			try {
+				pgliteInstance = (await Promise.race([
+					createPromise,
+					timeoutPromise,
+				])) as PGlite;
+			} catch (raceError: any) {
+				postLogMessage(
+					"error",
+					"PGlite.create() failed or timed out:",
+					{
+						message: raceError.message,
+						stack: raceError.stack,
+					}
+				);
+				throw raceError;
+			}
+
 			const pgLiteCreateDuration = (
 				(performance.now() - pgLiteCreateStart) /
 				1000

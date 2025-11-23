@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type LocalFastVectorizePlugin from "../../main";
-	import type { SimilarityResultItem } from "../../core/storage/types";
 	import { getIcon } from "obsidian";
-	import ChunkItemComponent from "./ChunkItemComponent.svelte";
 	import { onMount, tick, untrack } from "svelte";
+	import type { SimilarityResultItem } from "../../core/storage/types";
+	import type LocalFastVectorizePlugin from "../../main";
+	import ChunkItemComponent from "./ChunkItemComponent.svelte";
 
 	let {
 		plugin,
@@ -52,6 +52,9 @@
 	);
 	const showWelcomeState = $derived(
 		!hasChunks && !hasActiveNote && !isSearchResultsMode,
+	);
+	const showNeedsIndexingState = $derived(
+		hasActiveNote && !hasChunks && !isSearchResultsMode,
 	);
 
 	onMount(() => {
@@ -296,9 +299,22 @@
 		}
 	}
 
-	async function openNote(filePath: string): Promise<void> {
+	async function openNote(
+		filePath: string,
+		event?: MouseEvent | KeyboardEvent,
+	): Promise<void> {
+		const isMouseEvent = event instanceof MouseEvent;
+		const newLeaf =
+			isMouseEvent && (event.ctrlKey || event.metaKey || event.button === 1);
+		const openInBackground = isMouseEvent && event.button === 1;
+
 		try {
-			await plugin.app.workspace.openLinkText(filePath, "");
+			await plugin.app.workspace.openLinkText(
+				filePath,
+				"",
+				newLeaf || false,
+				{ active: !openInBackground },
+			);
 		} catch (error) {
 			console.error(`Failed to open note: ${filePath}`, error);
 		}
@@ -376,7 +392,20 @@
 		<div class="related-chunks-header">Related to {activeNoteName}</div>
 	{/if}
 
-	{#if showEmptyState}
+	{#if showNeedsIndexingState}
+		<div class="related-chunks-empty">
+			<div style="margin-bottom: 10px;">
+				⚠️ This note hasn't been indexed yet.
+			</div>
+			<div style="font-size: 0.9em; color: var(--text-muted);">
+				Run the command:<br/>
+				<strong>"Rebuild index for current note"</strong><br/>
+				or<br/>
+				<strong>"Rebuild all indexes"</strong><br/>
+				from the command palette (Ctrl/Cmd+P).
+			</div>
+		</div>
+	{:else if showEmptyState}
 		<div class="related-chunks-empty">No related chunks found.</div>
 	{:else if showWelcomeState}
 		<div class="related-chunks-empty">
@@ -398,8 +427,16 @@
 				onmouseover={(e) => handleMouseOver(e, filePath)}
 				onfocus={(e) => handleMouseOver(e, filePath)}
 				data-href={filePath}
-				onclick={() => openNote(filePath)}
-				onkeydown={(e) => e.key === "Enter" && openNote(filePath)}
+				onclick={(e) => openNote(filePath, e)}
+				onauxclick={(e) => {
+					if (e.button === 1) {
+						e.preventDefault();
+						openNote(filePath, e);
+					}
+				}}
+				onkeydown={(e) => {
+					if (e.key === "Enter") openNote(filePath, e);
+				}}
 			>
 				<div
 					class="tree-item-icon collapse-icon"
@@ -487,6 +524,7 @@
 
 	.related-chunks-file-header {
 		display: flex;
+		cursor: pointer;
 	}
 
 	.related-chunks-file-header:hover {

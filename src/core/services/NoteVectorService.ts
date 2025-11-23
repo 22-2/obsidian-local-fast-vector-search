@@ -1,9 +1,9 @@
-import { TFile, App } from "obsidian";
-import { TextChunker } from "../chunking/TextChunker";
-import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
-import type { SimilarityResultItem } from "../storage/types";
-import { LoggerService } from "../../shared/services/LoggerService";
+import { App, TFile } from "obsidian";
 import type { PluginSettings } from "src/pluginSettings";
+import { LoggerService } from "../../shared/services/LoggerService";
+import { TextChunker } from "../chunking/TextChunker";
+import type { SimilarityResultItem } from "../storage/types";
+import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
 
 export class NoteVectorService {
 	constructor(
@@ -61,17 +61,21 @@ export class NoteVectorService {
 	}
 
 	public async getNoteVectorFromDB(file: TFile): Promise<number[] | null> {
-		this.logger?.verbose_log(
-			`Getting note vector from DB for ${file.path}`
-		);
+		this.logger?.log(`Getting note vector from DB for ${file.path}`);
 		try {
 			const chunkVectors = await this.workerProxy.getVectorsByFilePath(
 				file.path
 			);
 
+			this.logger?.log(
+				`getVectorsByFilePath returned ${
+					chunkVectors?.length || 0
+				} vectors for ${file.path}`
+			);
+
 			if (!chunkVectors || chunkVectors.length === 0) {
-				this.logger?.verbose_log(
-					`No vectors found in DB for note ${file.path}. It might not be vectorized yet.`
+				this.logger?.warn(
+					`⚠️ No vectors found in DB for note ${file.path}. The file needs to be vectorized. Try running "Rebuild index for current note" command.`
 				);
 				return null;
 			}

@@ -1,13 +1,13 @@
-import { App, WorkspaceLeaf, MarkdownView } from "obsidian";
+import { App, MarkdownView, WorkspaceLeaf } from "obsidian";
+import type { PluginSettings } from "../../pluginSettings";
 import { LoggerService } from "../../shared/services/LoggerService";
 import { NotificationService } from "../../shared/services/NotificationService";
-import { NoteVectorService } from "../services/NoteVectorService";
-import { SearchService } from "../services/SearchService";
 import {
 	RelatedChunksView,
 	VIEW_TYPE_RELATED_CHUNKS,
 } from "../../ui/sidebar/RelatedChunksView";
-import type { PluginSettings } from "../../pluginSettings";
+import { NoteVectorService } from "../services/NoteVectorService";
+import { SearchService } from "../services/SearchService";
 
 export class ViewManager {
 	public lastProcessedFilePath: string | null = null;
@@ -195,6 +195,8 @@ export class ViewManager {
 	}
 
 	async handleActiveLeafChange(): Promise<void> {
+		this.logger?.log("handleActiveLeafChange called");
+
 		const currentActiveLeaf = this.app.workspace.activeLeaf;
 		if (
 			currentActiveLeaf &&
@@ -208,6 +210,7 @@ export class ViewManager {
 
 		const activeFile = this.app.workspace.getActiveFile();
 		const currentFilePath = activeFile?.path || null;
+		this.logger?.log(`Active file: ${currentFilePath || "none"}`);
 
 		if (currentFilePath === this.lastProcessedFilePath) {
 			this.logger?.verbose_log(
@@ -226,17 +229,31 @@ export class ViewManager {
 			return;
 		}
 
+		this.logger?.log("NoteVectorService is ready");
+
 		const sidebarLeaves = this.app.workspace.getLeavesOfType(
 			VIEW_TYPE_RELATED_CHUNKS
 		);
 
+		this.logger?.log(`Found ${sidebarLeaves.length} sidebar leaves`);
+
 		if (activeFile && activeFile.extension === "md") {
-			this.logger?.verbose_log(
+			this.logger?.log(
 				`Active file changed: ${activeFile.path}. Finding related chunks.`
 			);
 			try {
+				this.logger?.log(
+					`Attempting to get note vector from DB for: ${activeFile.path}`
+				);
 				const noteVector = await noteVectorService.getNoteVectorFromDB(
 					activeFile
+				);
+				this.logger?.log(
+					`Note vector result for ${activeFile.path}: ${
+						noteVector
+							? `Found (length: ${noteVector.length})`
+							: "Not found"
+					}`
 				);
 				if (noteVector) {
 					const excludeFilePaths = new Set<string>();
@@ -298,13 +315,14 @@ export class ViewManager {
 						}
 					}
 				} else {
-					this.logger?.verbose_log(
-						`Could not get note vector for ${activeFile.path}. It might not be vectorized yet or is empty.`
+					this.logger?.warn(
+						`⚠️ Could not get note vector for ${activeFile.path}. The file might not be vectorized yet or is empty. Please check if the file has been indexed.`
 					);
 					if (sidebarLeaves.length > 0) {
 						const sidebarView = sidebarLeaves[0]
 							.view as RelatedChunksView;
-						sidebarView.clearView();
+						// Keep the note name but show empty results to trigger "needs indexing" message
+						sidebarView.updateView(activeFile.basename, []);
 					}
 				}
 			} catch (error) {
