@@ -1,13 +1,16 @@
 export class LoggerService {
 	private verboseLoggingEnabled: boolean = false; // verbose logging の状態を保持
 
+	// INFO レベルのログは verbose が有効なときのみ出力する
 	log(message: string, ...args: any[]): void {
-		console.log(`[INFO] ${message}`, ...args);
+		if (this.verboseLoggingEnabled) {
+			console.log(`[INFO] ${message}`, ...args);
+		}
 	}
 
+	// より詳細なログ（verbose）は verbose 設定が有効なときのみ出力
 	verbose_log(message: string, ...args: any[]): void {
 		if (this.verboseLoggingEnabled) {
-			// 設定が有効な場合のみ出力
 			console.log(`[VERBOSE] ${message}`, ...args);
 		}
 	}

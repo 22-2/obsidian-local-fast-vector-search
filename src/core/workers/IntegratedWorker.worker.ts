@@ -1,44 +1,87 @@
 // アンチドートコード: @huggingface/transformers がロードされる前に 'process' を無力化する
 
 if (typeof (self as any).process !== "undefined" && (self as any).process.env) {
-	console.log(
-		'[VectorPlugin Worker] Detected a potentially conflicting "process" object. Attempting neutralization...'
-	);
+	postMessage({
+		type: "status",
+		payload: {
+			level: "info",
+			message:
+				'[VectorPlugin Worker] Detected a potentially conflicting "process" object. Attempting neutralization...',
+			args: [],
+		},
+	});
 	try {
 		(self as any)._UNSAFE_process_polyfill = (self as any).process;
 		(self as any).process = undefined;
 
 		if (typeof (self as any).process === "undefined") {
-			console.log(
-				'[VectorPlugin Worker] "process" object successfully neutralized by overwriting with undefined.'
-			);
+			postMessage({
+				type: "status",
+				payload: {
+					level: "info",
+					message:
+						'[VectorPlugin Worker] "process" object successfully neutralized by overwriting with undefined.',
+					args: [],
+				},
+			});
 		} else {
-			console.warn(
-				'[VectorPlugin Worker] Failed to overwrite "process" object. The environment is heavily constrained.'
-			);
+			postMessage({
+				type: "status",
+				payload: {
+					level: "warn",
+					message:
+						'[VectorPlugin Worker] Failed to overwrite "process" object. The environment is heavily constrained.',
+					args: [],
+				},
+			});
 		}
 	} catch (e) {
-		console.error(
-			'[VectorPlugin Worker] A critical error occurred while trying to neutralize the "process" object:',
-			e
-		);
+		postMessage({
+			type: "status",
+			payload: {
+				level: "error",
+				message:
+					'[VectorPlugin Worker] A critical error occurred while trying to neutralize the "process" object:',
+				args: [
+					e instanceof Error
+						? { message: e.message, stack: e.stack }
+						: String(e),
+				],
+			},
+		});
 	}
 } else if (typeof (self as any).process !== "undefined") {
-	console.log(
-		'[VectorPlugin Worker] Detected a "process" object, but it seems harmless (no env property). Leaving it as is.'
-	);
+	postMessage({
+		type: "status",
+		payload: {
+			level: "info",
+			message:
+				'[VectorPlugin Worker] Detected a "process" object, but it seems harmless (no env property). Leaving it as is.',
+			args: [],
+		},
+	});
 }
 
 // 最終チェック: process が未定義または無害な状態か確認
 if (typeof (self as any).process !== "undefined") {
-	console.warn(
-		'[VectorPlugin Worker] Warning: "process" object still exists after neutralization attempts. Value:',
-		(self as any).process
-	);
+	postMessage({
+		type: "status",
+		payload: {
+			level: "warn",
+			message:
+				'[VectorPlugin Worker] Warning: "process" object still exists after neutralization attempts. Value:',
+			args: [(self as any).process],
+		},
+	});
 } else {
-	console.log(
-		'[VectorPlugin Worker] "process" object successfully neutralized.'
-	);
+	postMessage({
+		type: "status",
+		payload: {
+			level: "info",
+			message: '[VectorPlugin Worker] "process" object successfully neutralized.',
+			args: [],
+		},
+	});
 }
 
 import type {

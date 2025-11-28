@@ -66,10 +66,10 @@ export class CommandHandler {
 				)}s.`,
 				5000
 			);
-			console.log(
+			this.plugin.logger?.verbose_log(
 				`All notes vectorized and saved in ${totalTime.toFixed(
-					2
-				)}s. Total vectors processed: ${totalVectorsProcessed}`
+						2
+					)}s. Total vectors processed: ${totalVectorsProcessed}`
 			);
 		} catch (error) {
 			console.error(
@@ -142,7 +142,9 @@ export class CommandHandler {
 				"Index rebuild process completed successfully!",
 				5000
 			);
-			console.log("Index rebuild process completed successfully.");
+			this.plugin.logger?.verbose_log(
+				"Index rebuild process completed successfully."
+			);
 		} catch (error: any) {
 			console.error("Failed to rebuild all indexes:", error);
 			this.notificationService.updateNotice(

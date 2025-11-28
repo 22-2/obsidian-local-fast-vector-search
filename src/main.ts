@@ -135,7 +135,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 					try {
 						await this.resourceInitializer.initializeResources();
 					} catch (error) {
-						console.error(
+						this.logger?.error(
 							"Background resource initialization failed:",
 							error
 						);
@@ -147,7 +147,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 			} catch (error) {
 				const errorMsg =
 					"An error occurred during post-reload rebuild action. Check console.";
-				console.error(errorMsg, error);
+				this.logger?.error(errorMsg, error);
 				new Notice(errorMsg, 7000);
 				sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
 			}
