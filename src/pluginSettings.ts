@@ -15,7 +15,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	verboseLoggingEnabled: false,
 	searchResultLimit: 100,
 	relatedChunksResultLimit: 30,
-	autoShowRelatedChunksSidebar: true,
+	autoShowRelatedChunksSidebar: false,
 	expandRelatedChunksFileGroups: true,
 	excludeHeadersInVectorization: true,
 	excludeOutgoingLinksFromRelatedChunks: true,

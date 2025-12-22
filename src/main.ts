@@ -152,16 +152,13 @@ export default class LocalFastVectorizePlugin extends Plugin {
 				sessionStorage.removeItem("my-vector-plugin-rebuild-flag");
 			}
 
-			if (this.settings.autoShowRelatedChunksSidebar) {
-				this.viewManager.activateRelatedChunksView();
-			}
 			this.registerEvent(
 				this.app.workspace.on(
 					"active-leaf-change",
 					this.debouncedHandleActiveLeafChange
 				)
 			);
-			this.viewManager.handleActiveLeafChange();
+			this.viewManager.handleActiveLeafChange(true);
 		});
 
 		this.registerEvent(

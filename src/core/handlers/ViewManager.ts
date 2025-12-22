@@ -194,7 +194,7 @@ export class ViewManager {
 		}
 	}
 
-	async handleActiveLeafChange(): Promise<void> {
+	async handleActiveLeafChange(skipActivation = false): Promise<void> {
 		this.logger?.log("handleActiveLeafChange called");
 
 		const currentActiveLeaf = this.app.workspace.activeLeaf;
@@ -295,11 +295,15 @@ export class ViewManager {
 					if (sidebarLeaves.length > 0) {
 						const sidebarView = sidebarLeaves[0]
 							.view as RelatedChunksView;
+						if (!skipActivation) return;
 						sidebarView.updateView(
 							activeFile.basename,
 							searchResults
 						);
-					} else if (this.settings.autoShowRelatedChunksSidebar) {
+					} else if (
+						this.settings.autoShowRelatedChunksSidebar &&
+						!skipActivation
+					) {
 						await this.activateRelatedChunksView();
 						const newSidebarLeaves =
 							this.app.workspace.getLeavesOfType(
