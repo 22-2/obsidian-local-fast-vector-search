@@ -61,6 +61,12 @@ export class NoteVectorService {
 	}
 
 	public async getNoteVectorFromDB(file: TFile): Promise<number[] | null> {
+		if (!this.app.vault.getAbstractFileByPath(file.path)) {
+			this.logger?.verbose_log(
+				`File ${file.path} does not exist in vault, skipping vector retrieval.`
+			);
+			return null;
+		}
 		this.logger?.log(`Getting note vector from DB for ${file.path}`);
 		try {
 			const chunkVectors = await this.workerProxy.getVectorsByFilePath(
