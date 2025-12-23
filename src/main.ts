@@ -155,7 +155,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 			this.registerEvent(
 				this.app.workspace.on(
 					"active-leaf-change",
-					this.debouncedHandleActiveLeafChange
+					() => this.debouncedHandleActiveLeafChange()
 				)
 			);
 			this.viewManager.handleActiveLeafChange(true);
