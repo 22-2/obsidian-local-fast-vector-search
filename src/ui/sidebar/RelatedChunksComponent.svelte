@@ -320,6 +320,29 @@
 		}
 	}
 
+	function getFilePathFromEventTarget(
+		event: MouseEvent,
+	): string | null {
+		const target = event.currentTarget as HTMLElement | null;
+		return target?.dataset?.href ?? null;
+	}
+
+	function handleClick(event: MouseEvent): void {
+		const filePath = getFilePathFromEventTarget(event);
+		if (!filePath) return;
+		openNote(filePath, event);
+	}
+
+	function handleMouseDown(event: MouseEvent): void {
+		// Prevent Chromium/Electron auto-scroll on middle click
+		if (event.button !== 1) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const filePath = getFilePathFromEventTarget(event);
+		if (!filePath) return;
+		openNote(filePath, event);
+	}
+
 	function handleMouseOver(
 		event: MouseEvent | FocusEvent,
 		filePath: string,
@@ -419,25 +442,20 @@
 		{@const currentDisplayedChunks =
 			displayedChunksInExpandedGroups.get(filePath) || []}
 
-		<div class="related-chunks-file-group" use:onGroupRendered>
-			<div
-				class="related-chunks-file-header tree-item-self search-result-file-title"
-				role="button"
-				tabindex="0"
-				onmouseover={(e) => handleMouseOver(e, filePath)}
-				onfocus={(e) => handleMouseOver(e, filePath)}
-				data-href={filePath}
-				onclick={(e) => openNote(filePath, e)}
-				onauxclick={(e) => {
-					if (e.button === 1) {
-						e.preventDefault();
-						openNote(filePath, e);
-					}
-				}}
-				onkeydown={(e) => {
-					if (e.key === "Enter") openNote(filePath, e);
-				}}
-			>
+			<div class="related-chunks-file-group" use:onGroupRendered>
+				<div
+					class="related-chunks-file-header tree-item-self search-result-file-title"
+					role="button"
+					tabindex="0"
+					onmouseover={(e) => handleMouseOver(e, filePath)}
+					onfocus={(e) => handleMouseOver(e, filePath)}
+					data-href={filePath}
+					onmousedown={handleMouseDown}
+					onclick={handleClick}
+					onkeydown={(e) => {
+						if (e.key === "Enter") openNote(filePath, e);
+					}}
+				>
 				<div
 					class="tree-item-icon collapse-icon"
 					class:is-collapsed={!isExpanded}
