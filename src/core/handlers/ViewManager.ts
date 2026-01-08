@@ -32,11 +32,10 @@ export class ViewManager {
 
 			if (primaryLeaf) {
 				this.logger?.verbose_log("Reusing existing leaf.");
-				this.app.workspace.revealLeaf(primaryLeaf);
 				return;
 			}
 
-			await this.createAndRevealNewLeaf();
+			await this.createNewLeaf();
 		} catch (error) {
 			this.logger?.error("Error in activateRelatedChunksView:", error);
 			throw error;
@@ -59,7 +58,7 @@ export class ViewManager {
 		return leaves[0];
 	}
 
-	private async createAndRevealNewLeaf(): Promise<void> {
+	private async createNewLeaf(): Promise<void> {
 		this.logger?.verbose_log("Creating new leaf.");
 		
 		const newLeaf = await this.createRelatedChunksLeaf();
@@ -71,8 +70,7 @@ export class ViewManager {
 			type: VIEW_TYPE_RELATED_CHUNKS,
 			active: true,
 		});
-		this.app.workspace.revealLeaf(newLeaf);
-		this.logger?.verbose_log("New leaf created and revealed successfully.");
+		this.logger?.verbose_log("New leaf created successfully.");
 	}
 
 	private async createRelatedChunksLeaf(): Promise<WorkspaceLeaf | null> {
