@@ -32,7 +32,6 @@ export default class LocalFastVectorizePlugin extends Plugin {
 	private fileEventHandler!: FileEventHandler;
 	public viewManager!: ViewManager;
 	public commandRegistrar!: CommandRegistrar;
-	private debouncedHandleActiveLeafChange!: () => void;
 
 	async onload() {
 		this.settings = Object.assign(
@@ -79,12 +78,6 @@ export default class LocalFastVectorizePlugin extends Plugin {
 			this.resourceInitializer,
 			this.viewManager,
 			this.clearResources.bind(this)
-		);
-
-		this.debouncedHandleActiveLeafChange = debounce(
-			this.viewManager.handleActiveLeafChange.bind(this.viewManager),
-			100,
-			true
 		);
 
 		this.app.workspace.onLayoutReady(async () => {
@@ -155,7 +148,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 			this.registerEvent(
 				this.app.workspace.on(
 					"active-leaf-change",
-					() => this.debouncedHandleActiveLeafChange()
+					() => this.viewManager.handleActiveLeafChange()
 				)
 			);
 			this.viewManager.handleActiveLeafChange(true);
@@ -243,7 +236,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 
 	async onunload() {
 		this.logger?.verbose_log("Unloading vector plugin...");
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_RELATED_CHUNKS);
+		// this.app.workspace.detachLeavesOfType(VIEW_TYPE_RELATED_CHUNKS);
 
 		this.fileEventHandler.clearAllTimers();
 		this.resourceInitializer.terminate();

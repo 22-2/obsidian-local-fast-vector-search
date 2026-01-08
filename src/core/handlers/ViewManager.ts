@@ -1,4 +1,4 @@
-import { App, MarkdownView, TFile, WorkspaceLeaf } from "obsidian";
+import { App, MarkdownView, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import type { PluginSettings } from "../../pluginSettings";
 import { LoggerService } from "../../shared/services/LoggerService";
 import { NotificationService } from "../../shared/services/NotificationService";
@@ -170,41 +170,53 @@ export class ViewManager {
 		return view instanceof RelatedChunksView ? view : null;
 	}
 
-	async handleActiveLeafChange(skipActivation = false): Promise<void> {
-		this.logger?.log("handleActiveLeafChange called");
+	handleActiveLeafChange = debounce(
+		async (skipActivation: boolean = false): Promise<void> => {
+			this.logger?.log("handleActiveLeafChange called");
 
-		if (this.shouldSkipUpdate()) {
-			return;
-		}
+			// if (this.shouldSkipUpdate()) {
+			// 	return;
+			// }
 
-		const activeFile = this.app.workspace.getActiveFile();
-		const currentFilePath = activeFile?.path || null;
-		this.logger?.log(`Active file: ${currentFilePath || "none"}`);
+			const activeFile = this.app.workspace.getActiveFile();
+			const currentFilePath = activeFile?.path || null;
+			this.logger?.log(`Active file: ${currentFilePath || "none"}`);
 
-		if (currentFilePath === this.lastProcessedFilePath) {
-			this.logger?.verbose_log(
-				`Active file is the same as previously processed (${currentFilePath}), skipping update.`
-			);
-			return;
-		}
+			if (currentFilePath === this.lastProcessedFilePath) {
+				this.logger?.verbose_log(
+					`Active file is the same as previously processed (${currentFilePath}), skipping update.`
+				);
+				return;
+			}
 
-		this.lastProcessedFilePath = currentFilePath;
+			this.lastProcessedFilePath = currentFilePath;
 
-		const noteVectorService = this.getNoteVectorService();
-		if (!noteVectorService) {
-			this.logger?.warn("NoteVectorService not ready for active leaf change.");
-			return;
-		}
+			const noteVectorService = this.getNoteVectorService();
+			if (!noteVectorService) {
+				this.logger?.warn(
+					"NoteVectorService not ready for active leaf change."
+				);
+				return;
+			}
 
-		this.logger?.log("NoteVectorService is ready");
+			this.logger?.log("NoteVectorService is ready");
 
-		if (activeFile && activeFile.extension === "md") {
-			await this.processMarkdownFile(activeFile, noteVectorService, skipActivation);
-		} else {
-			this.logger?.verbose_log("No active markdown file or active file is not markdown.");
-			this.clearSidebarView();
-		}
-	}
+			if (activeFile && activeFile.extension === "md") {
+				await this.processMarkdownFile(
+					activeFile,
+					noteVectorService,
+					skipActivation
+				);
+			} else {
+				this.logger?.verbose_log(
+					"No active markdown file or active file is not markdown."
+				);
+				this.clearSidebarView();
+			}
+		},
+		200,
+		true
+	);
 
 	private shouldSkipUpdate(): boolean {
 		const currentActiveLeaf = this.app.workspace.activeLeaf;
