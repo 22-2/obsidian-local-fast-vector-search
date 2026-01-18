@@ -2,6 +2,7 @@ import { App, MarkdownView, TFile, WorkspaceLeaf, debounce } from "obsidian";
 import type { PluginSettings } from "../../pluginSettings";
 import { LoggerService } from "../../shared/services/LoggerService";
 import { NotificationService } from "../../shared/services/NotificationService";
+import { isPathIgnoredByUserFilters } from "../../shared/utils/vaultUtils";
 import {
 	RelatedChunksView,
 	VIEW_TYPE_RELATED_CHUNKS,
@@ -148,15 +149,33 @@ export class ViewManager {
 				view.setLoadingState(query);
 			}
 
+			const activeFile = this.app.workspace.getActiveFile();
+			const activeFileIgnored =
+				this.settings.enableUserIgnoreFilters &&
+				!!(activeFile && isPathIgnoredByUserFilters(this.app, activeFile.path));
+			const effectiveExcludeFilePaths = activeFileIgnored
+				? []
+				: excludeFilePaths;
+
 			const results = await searchService.search(
 				query,
 				undefined,
 				this.settings.relatedChunksResultLimit,
-				{ excludeFilePaths }
+				{ excludeFilePaths: effectiveExcludeFilePaths }
 			);
 
+			const shouldFilterIgnored =
+				this.settings.enableUserIgnoreFilters &&
+				!activeFileIgnored;
+			const filteredResults = shouldFilterIgnored
+				? results.filter(
+						(result) =>
+							!isPathIgnoredByUserFilters(this.app, result.file_path)
+				  )
+				: results;
+
 			if (view) {
-				view.displaySearchResults(query, results);
+				view.displaySearchResults(query, filteredResults);
 			}
 		} catch (error) {
 			this.logger?.error("Error during sidebar search:", error);
@@ -269,14 +288,32 @@ export class ViewManager {
 		noteVectorService: NoteVectorService,
 		skipActivation: boolean
 	): Promise<void> {
-		const excludeFilePaths = this.buildExcludeFilePaths(activeFile);
+		const activeFileIgnored =
+			this.settings.enableUserIgnoreFilters &&
+			isPathIgnoredByUserFilters(this.app, activeFile.path);
+		const excludeFilePaths = activeFileIgnored
+			? new Set<string>()
+			: this.buildExcludeFilePaths(activeFile);
 		const searchResults = await noteVectorService.findSimilarChunks(
 			noteVector,
 			this.settings.relatedChunksResultLimit,
 			Array.from(excludeFilePaths)
 		);
 
-		await this.updateOrCreateSidebarView(activeFile, searchResults, skipActivation);
+		const shouldFilterIgnored =
+			this.settings.enableUserIgnoreFilters && !activeFileIgnored;
+		const filteredResults = shouldFilterIgnored
+			? searchResults.filter(
+					(result) =>
+						!isPathIgnoredByUserFilters(this.app, result.file_path)
+				)
+			: searchResults;
+
+		await this.updateOrCreateSidebarView(
+			activeFile,
+			filteredResults,
+			skipActivation
+		);
 	}
 
 	private buildExcludeFilePaths(activeFile: TFile): Set<string> {

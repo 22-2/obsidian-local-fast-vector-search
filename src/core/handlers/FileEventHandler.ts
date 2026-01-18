@@ -1,6 +1,8 @@
 import { TFile, TAbstractFile, App, type CachedMetadata } from "obsidian";
 import { LoggerService } from "../../shared/services/LoggerService";
+import { isPathIgnoredByUserFilters } from "../../shared/utils/vaultUtils";
 import { VectorizationService } from "../services/VectorizationService";
+import type { PluginSettings } from "../../pluginSettings";
 
 export class FileEventHandler {
 	private fileChangeTimers: Map<string, NodeJS.Timeout> = new Map();
@@ -9,6 +11,7 @@ export class FileEventHandler {
 	constructor(
 		private app: App,
 		private logger: LoggerService | null,
+		private settings: PluginSettings,
 		private getVectorizationService: () => VectorizationService | null,
 		private onFileProcessed: () => Promise<void>
 	) {}
@@ -43,6 +46,18 @@ export class FileEventHandler {
 							"Vectorization service not ready in handleFileChange for: " +
 								file.path
 						);
+						return;
+					}
+
+					if (
+						this.settings.enableUserIgnoreFilters &&
+						isPathIgnoredByUserFilters(this.app, file.path)
+					) {
+						this.logger?.verbose_log(
+							`Skipping change for ignored file (userIgnoreFilters): ${file.path}`
+						);
+						await vectorizationService.vectorizeSingleFile(file);
+						await this.onFileProcessed();
 						return;
 					}
 
@@ -149,6 +164,30 @@ export class FileEventHandler {
 					"Vectorization service not ready in handleFileRename for: " +
 						oldPath
 				);
+				return;
+			}
+
+			const isOldIgnored =
+				this.settings.enableUserIgnoreFilters &&
+				isPathIgnoredByUserFilters(this.app, oldPath);
+			const isNewIgnored =
+				this.settings.enableUserIgnoreFilters &&
+				isPathIgnoredByUserFilters(this.app, file.path);
+
+			if (isNewIgnored) {
+				this.logger?.verbose_log(
+					`Renamed into ignored path (userIgnoreFilters): ${file.path}`
+				);
+				await vectorizationService.deleteVectorsForFile(oldPath);
+				await this.onFileProcessed();
+				return;
+			}
+
+			if (isOldIgnored && !isNewIgnored) {
+				this.logger?.verbose_log(
+					`Rename from ignored path detected: ${oldPath} -> ${file.path}`
+				);
+				await this.onFileProcessed();
 				return;
 			}
 

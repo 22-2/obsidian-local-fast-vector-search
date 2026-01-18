@@ -8,6 +8,7 @@ export interface PluginSettings {
 	excludeHeadersInVectorization: boolean;
 	excludeOutgoingLinksFromRelatedChunks: boolean;
 	excludeBacklinksFromRelatedChunks: boolean;
+	enableUserIgnoreFilters: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -20,4 +21,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	excludeHeadersInVectorization: true,
 	excludeOutgoingLinksFromRelatedChunks: true,
 	excludeBacklinksFromRelatedChunks: true,
+	enableUserIgnoreFilters: true,
 };

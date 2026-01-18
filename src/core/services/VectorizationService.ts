@@ -1,6 +1,7 @@
 import { App, TFile } from "obsidian";
 import { TextChunker } from "../../core/chunking/TextChunker";
 import { LoggerService } from "../../shared/services/LoggerService";
+import { isPathIgnoredByUserFilters } from "../../shared/utils/vaultUtils";
 import { IntegratedWorkerProxy } from "../workers/IntegratedWorkerProxy";
 import type { ChunkInfo } from "../storage/types";
 import type { PluginSettings } from "src/pluginSettings";
@@ -28,6 +29,21 @@ export class VectorizationService {
 
 		for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
 			const file = files[fileIndex];
+			if (
+				this.settings.enableUserIgnoreFilters &&
+				isPathIgnoredByUserFilters(this.app, file.path)
+			) {
+				this.logger?.verbose_log(
+					`Skipping ignored file (userIgnoreFilters): ${file.path}`
+				);
+				if (onProgress) {
+					onProgress(
+						`Skipping ignored file: ${file.basename.replace(/\.md$/, "")}`,
+						false
+					);
+				}
+				continue;
+			}
 			const progressPercent = (
 				((fileIndex + 1) / files.length) *
 				100
@@ -145,6 +161,17 @@ export class VectorizationService {
 		contentToProcess?: string
 	): Promise<{ vectorsProcessed: number; vectorsDeleted: number }> {
 		this.logger?.log(`Vectorizing single file: ${file.path}`);
+
+		if (
+			this.settings.enableUserIgnoreFilters &&
+			isPathIgnoredByUserFilters(this.app, file.path)
+		) {
+			this.logger?.verbose_log(
+				`Skipping vectorization for ignored file (userIgnoreFilters): ${file.path}`
+			);
+			const vectorsDeleted = await this.deleteVectorsForFile(file.path);
+			return { vectorsProcessed: 0, vectorsDeleted };
+		}
 
 		const vectorsDeleted = await this.deleteVectorsForFile(file.path);
 		let vectorsProcessed = 0;

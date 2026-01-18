@@ -186,6 +186,20 @@ export class VectorizerSettingTab extends PluginSettingTab {
 		containerEl.createEl("h2", { text: "Vectorization" });
 
 		new Setting(containerEl)
+			.setName("Respect Obsidian Ignore Filters")
+			.setDesc(
+				"If enabled, the plugin will respect Obsidian's userIgnoreFilters. Ignored notes won't be vectorized, and related-chunks suggestions will exclude ignored notes unless the active note itself is ignored."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableUserIgnoreFilters)
+					.onChange(async (value) => {
+						this.plugin.settings.enableUserIgnoreFilters = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName("Exclude Headers from Vectorization")
 			.setDesc(
 				"If enabled, markdown headers (#, ##, etc.) will be excluded from the text before vectorization. Changing this requires a full index rebuild."

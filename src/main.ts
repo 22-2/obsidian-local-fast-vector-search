@@ -63,6 +63,7 @@ export default class LocalFastVectorizePlugin extends Plugin {
 		this.fileEventHandler = new FileEventHandler(
 			this.app,
 			this.logger,
+			this.settings,
 			() => this.resourceInitializer.vectorizationService,
 			async () => {
 				this.viewManager.resetLastProcessedFile();
