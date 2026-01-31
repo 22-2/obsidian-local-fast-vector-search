@@ -185,8 +185,20 @@ export class ViewManager {
 
 	private getRelatedChunksView(): RelatedChunksView | null {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RELATED_CHUNKS);
-		const view = leaves.length > 0 ? leaves[0].view : null;
-		return view instanceof RelatedChunksView ? view : null;
+		if (leaves.length === 0) {
+			return null;
+		}
+		
+		const view = leaves[0].view;
+		if (view instanceof RelatedChunksView) {
+			return view;
+		}
+		
+		const viewType = (view as any)?.getViewType?.() || 'unknown';
+		this.logger?.warn(
+			`Found leaf with VIEW_TYPE_RELATED_CHUNKS, but view is not a RelatedChunksView instance. Type: ${viewType}`
+		);
+		return null;
 	}
 
 	handleActiveLeafChange = debounce(
@@ -375,6 +387,11 @@ export class ViewManager {
 		const view = leaf.view;
 		if (view instanceof RelatedChunksView) {
 			view.updateView(activeFile.basename, searchResults);
+		} else {
+			// const viewType = (view as any)?.getViewType?.() || 'unknown';
+			// this.logger?.warn(
+			// 	`View in leaf is not a RelatedChunksView instance. Type: ${viewType}`
+			// );
 		}
 	}
 
@@ -412,7 +429,14 @@ export class ViewManager {
 	private clearSidebarView(): void {
 		const view = this.getRelatedChunksView();
 		if (view) {
-			view.clearView();
+			if (view instanceof RelatedChunksView) {
+				view.clearView();
+			} else {
+				const viewType = (view as any)?.getViewType?.() || 'unknown';
+				this.logger?.warn(
+					`View is not a RelatedChunksView instance in clearSidebarView. Type: ${viewType}`
+				);
+			}
 		}
 	}
 
